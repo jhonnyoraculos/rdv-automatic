@@ -34,6 +34,8 @@ company_header(
 )
 
 logger = logging.getLogger("rdv.ui")
+SIGNATURE_DIGITAL = "Assinar digitalmente agora"
+SIGNATURE_IN_PERSON = "Assinar pessoalmente na folha impressa"
 
 period = get_active_period()
 employees = get_active_employees()
@@ -141,6 +143,11 @@ if st.session_state.get("rdv_context") != context:
     st.session_state[f"location_{context}"] = existing.location if existing else ""
     st.session_state[f"signed_date_{context}"] = (
         existing.signed_date if existing and existing.signed_date else now_sp().date()
+    )
+    st.session_state[f"signature_mode_{context}"] = (
+        SIGNATURE_IN_PERSON
+        if existing and existing.signature_data is None
+        else SIGNATURE_DIGITAL
     )
     st.session_state[f"signature_pad_open_{context}"] = False
     for day in date_range(period.start_date, period.end_date):
@@ -300,31 +307,45 @@ with date_col:
     )
 
 st.write("Assinatura do colaborador")
+signature_mode = st.radio(
+    "Como você deseja assinar?",
+    [SIGNATURE_DIGITAL, SIGNATURE_IN_PERSON],
+    key=f"signature_mode_{context}",
+)
+sign_in_person = signature_mode == SIGNATURE_IN_PERSON
 signature_state_key = f"signature_png_{context}"
 signature_pad_key = f"signature_pad_open_{context}"
-if not st.session_state.get(signature_pad_key):
+if sign_in_person:
+    st.session_state.pop(signature_state_key, None)
     st.info(
-        "No celular, toque no botão abaixo depois de preencher o local. O teclado será fechado e o quadro grande será aberto."
+        "O espaço da assinatura ficará livre na folha para você assinar pessoalmente depois de imprimir."
     )
-    if st.button(
-        "ABRIR QUADRO GRANDE PARA ASSINAR",
-        type="primary",
-        use_container_width=True,
-        key=f"open_signature_{context}",
-    ):
-        st.session_state[signature_pad_key] = True
-        st.rerun()
 else:
-    st.caption(
-        "Use Ampliar tela se quiser mais espaço. Ao terminar, toque em Concluir assinatura."
-    )
-    current_signature = signature_pad(key=f"signature_{context}")
-    if current_signature:
-        st.session_state[signature_state_key] = current_signature
+    if not st.session_state.get(signature_pad_key):
+        st.info(
+            "No celular, toque no botão abaixo depois de preencher o local. O teclado será fechado e o quadro grande será aberto."
+        )
+        if st.button(
+            "ABRIR QUADRO GRANDE PARA ASSINAR",
+            type="primary",
+            use_container_width=True,
+            key=f"open_signature_{context}",
+        ):
+            st.session_state[signature_pad_key] = True
+            st.rerun()
     else:
-        st.session_state.pop(signature_state_key, None)
+        st.caption(
+            "Use Ampliar tela se quiser mais espaço. Ao terminar, toque em Concluir assinatura."
+        )
+        current_signature = signature_pad(key=f"signature_{context}")
+        if current_signature:
+            st.session_state[signature_state_key] = current_signature
+        else:
+            st.session_state.pop(signature_state_key, None)
 signature_png = st.session_state.get(signature_state_key)
-if signature_png:
+if sign_in_person:
+    st.success("Assinatura pessoal selecionada.")
+elif signature_png:
     st.success("Assinatura registrada.")
 else:
     st.caption("A assinatura desenhada é obrigatória para enviar o RDV.")
@@ -336,7 +357,11 @@ confirmed = st.checkbox(
 if st.button(
     "CONFIRMAR E ENVIAR RDV",
     type="primary",
-    disabled=not confirmed or not location.strip() or signature_png is None,
+    disabled=(
+        not confirmed
+        or not location.strip()
+        or (not sign_in_person and signature_png is None)
+    ),
     use_container_width=True,
 ):
     st.session_state["rdv_confirm"] = True
@@ -359,6 +384,7 @@ if st.session_state.get("rdv_confirm"):
                 location,
                 signed_date,
                 signature_png,
+                sign_in_person=sign_in_person,
             )
             st.session_state["rdv_success"] = protocol(saved.id)
             st.session_state["rdv_success_context"] = base_context

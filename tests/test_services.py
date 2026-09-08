@@ -167,6 +167,26 @@ def test_signature_and_location_are_required() -> None:
         )
 
 
+def test_employee_can_choose_to_sign_the_printed_sheet_in_person() -> None:
+    employee = create_employee("Caio Teste", EmployeeRole.MOTORISTA)
+    period = create_period(date(2026, 9, 1), date(2026, 9, 1), active=True)
+
+    rdv = create_rdv(
+        employee.id,
+        period.id,
+        False,
+        0,
+        _entries(period.start_date, period.end_date),
+        "Bauru/SP",
+        date(2026, 9, 8),
+        None,
+        sign_in_person=True,
+    )
+
+    assert rdv.signature_data is None
+    assert rdv_to_pdf(rdv).startswith(b"%PDF")
+
+
 def test_approval_follows_analyst_then_manager_workflow() -> None:
     employee = create_employee("Rui Teste", EmployeeRole.MOTORISTA)
     period = create_period(date(2026, 9, 1), date(2026, 9, 1), active=True)

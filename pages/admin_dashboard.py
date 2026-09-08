@@ -216,6 +216,10 @@ with details_right:
     st.write(f"**Revisado em:** {format_datetime(rdv.reviewed_at)}")
     st.write(f"**Data da assinatura:** {format_date(rdv.signed_date)}")
     st.write(
+        "**Assinatura do colaborador:** "
+        + ("Digital" if rdv.signature_data else "Pessoalmente na folha impressa")
+    )
+    st.write(
         f"**Analista:** {rdv.analyst_username or 'Pendente'}"
         f" — {format_datetime(rdv.analyst_signed_at)}"
     )

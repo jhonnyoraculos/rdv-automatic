@@ -333,14 +333,17 @@ def create_rdv(
     entries: Iterable[dict[str, Any]],
     location: str,
     signed_date: date,
-    signature_data: bytes,
+    signature_data: bytes | None,
+    sign_in_person: bool = False,
 ) -> RdvSubmission:
     try:
         try:
             normalized_location = clean_text(
                 location, "Local", 80, required=True
             ).upper()
-            normalized_signature = validate_signature_png(signature_data)
+            normalized_signature = (
+                None if sign_in_person else validate_signature_png(signature_data)
+            )
         except ValueError as exc:
             raise BusinessError(str(exc)) from exc
         if not isinstance(signed_date, date):
