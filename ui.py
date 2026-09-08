@@ -47,6 +47,11 @@ APP_CSS = """
         div[data-testid="column"] { min-width:100% !important; width:100% !important; }
         div.stButton > button, div.stDownloadButton > button { min-height:48px; }
         div.stButton > button p, div.stDownloadButton > button p { font-size:16px !important; }
+        div.stButton > button:disabled {
+            background:#e4e7ec !important; border-color:#d0d5dd !important;
+            color:#667085 !important; opacity:1 !important;
+        }
+        div[data-testid="stAlert"] { padding:.75rem 1rem; }
         div[data-testid="stWidgetLabel"] p { font-size:17px !important; line-height:1.35; }
         div[data-baseweb="input"] { min-height:54px; }
         div[data-baseweb="input"] input,

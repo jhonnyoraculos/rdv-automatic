@@ -318,11 +318,11 @@ if not st.session_state.get(signature_pad_key):
 else:
     st.caption("Assine no quadro abaixo usando o mouse ou o dedo.")
     canvas_result = st_canvas(
-        stroke_width=5,
+        stroke_width=4,
         stroke_color="#172033",
         background_color="#FFFFFF",
         update_streamlit=True,
-        height=300,
+        height=190,
         width=320,
         drawing_mode="freedraw",
         return_image_data=True,
