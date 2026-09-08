@@ -143,6 +143,7 @@ if st.session_state.get("rdv_context") != context:
     st.session_state[f"signed_date_{context}"] = (
         existing.signed_date if existing and existing.signed_date else now_sp().date()
     )
+    st.session_state[f"signature_pad_open_{context}"] = False
     for day in date_range(period.start_date, period.end_date):
         saved = saved_entries.get(day)
         suffix = f"{context}_{day:%Y_%m_%d}"
@@ -300,24 +301,38 @@ with date_col:
     )
 
 st.write("Assinatura do colaborador")
-st.caption("Assine no quadro abaixo usando o mouse ou o dedo.")
-canvas_result = st_canvas(
-    stroke_width=3,
-    stroke_color="#172033",
-    background_color="#FFFFFF",
-    update_streamlit=True,
-    height=180,
-    width=320,
-    drawing_mode="freedraw",
-    return_image_data=True,
-    key=f"signature_{context}",
-)
 signature_state_key = f"signature_png_{context}"
-current_signature = signature_from_canvas(canvas_result.image_data)
-if current_signature:
-    st.session_state[signature_state_key] = current_signature
-elif canvas_result.image_data is not None:
-    st.session_state.pop(signature_state_key, None)
+signature_pad_key = f"signature_pad_open_{context}"
+if not st.session_state.get(signature_pad_key):
+    st.info(
+        "No celular, toque no botão abaixo depois de preencher o local. O teclado será fechado e o quadro grande será aberto."
+    )
+    if st.button(
+        "ABRIR QUADRO GRANDE PARA ASSINAR",
+        type="primary",
+        use_container_width=True,
+        key=f"open_signature_{context}",
+    ):
+        st.session_state[signature_pad_key] = True
+        st.rerun()
+else:
+    st.caption("Assine no quadro abaixo usando o mouse ou o dedo.")
+    canvas_result = st_canvas(
+        stroke_width=5,
+        stroke_color="#172033",
+        background_color="#FFFFFF",
+        update_streamlit=True,
+        height=300,
+        width=320,
+        drawing_mode="freedraw",
+        return_image_data=True,
+        key=f"signature_{context}",
+    )
+    current_signature = signature_from_canvas(canvas_result.image_data)
+    if current_signature:
+        st.session_state[signature_state_key] = current_signature
+    elif canvas_result.image_data is not None:
+        st.session_state.pop(signature_state_key, None)
 signature_png = st.session_state.get(signature_state_key)
 if signature_png:
     st.success("Assinatura registrada.")

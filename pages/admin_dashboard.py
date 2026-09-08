@@ -272,11 +272,11 @@ if can_review:
     st.caption("Assine no quadro usando o mouse ou o dedo antes de aprovar.")
     approval_context = f"{admin_role.value}_{rdv.id}_{rdv.updated_at}"
     canvas_result = st_canvas(
-        stroke_width=3,
+        stroke_width=5,
         stroke_color="#172033",
         background_color="#FFFFFF",
         update_streamlit=True,
-        height=180,
+        height=300,
         width=320,
         drawing_mode="freedraw",
         return_image_data=True,

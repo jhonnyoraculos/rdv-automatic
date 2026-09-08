@@ -46,6 +46,16 @@ APP_CSS = """
         div[data-testid="stHorizontalBlock"] { flex-wrap:wrap; }
         div[data-testid="column"] { min-width:100% !important; width:100% !important; }
         div.stButton > button, div.stDownloadButton > button { min-height:48px; }
+        div.stButton > button p, div.stDownloadButton > button p { font-size:16px !important; }
+        div[data-testid="stWidgetLabel"] p { font-size:17px !important; line-height:1.35; }
+        div[data-baseweb="input"] { min-height:54px; }
+        div[data-baseweb="input"] input,
+        div[data-baseweb="textarea"] textarea,
+        div[data-baseweb="select"] input { font-size:18px !important; }
+        div[data-baseweb="select"] > div { min-height:54px; font-size:18px !important; }
+        div[role="radiogroup"] label p,
+        div[data-testid="stCheckbox"] label p { font-size:17px !important; }
+        div[data-testid="stExpander"] summary p { font-size:17px !important; }
         div[data-testid="stDataFrame"] { overflow-x:auto; }
         iframe, img { max-width:100%; }
     }
