@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 
-from exports import rdv_to_pdf
+from exports import pdf_to_png, rdv_to_pdf
 from models import BenefitType, EmployeeRole, SubmissionStatus
 from services import (
     BusinessError,
@@ -68,7 +68,8 @@ existing = get_submission_for_employee_period(employee.id, period.id)
 if (
     st.session_state.get("rdv_success_context") == base_context
     and st.session_state.get("rdv_success")
-    and (not existing or existing.status != SubmissionStatus.APROVADO)
+    and existing
+    and existing.status != SubmissionStatus.APROVADO
 ):
     st.success(f"RDV enviado com sucesso! Protocolo: {st.session_state['rdv_success']}")
     st.balloons()
@@ -78,14 +79,27 @@ if existing and existing.status == SubmissionStatus.APROVADO:
         f"RDV concluído! Protocolo: {protocol(existing.id)}. Todas as aprovações foram realizadas."
     )
     final_pdf = rdv_to_pdf(existing)
+    final_png = pdf_to_png(final_pdf)
     st.subheader("Folha final do RDV")
-    st.pdf(final_pdf, height=800, key=f"public_final_pdf_{existing.id}")
-    st.download_button(
-        "BAIXAR FOLHA CONCLUÍDA",
+    mobile_tab, pdf_tab = st.tabs(["Visualização para celular", "Visualização em PDF"])
+    with mobile_tab:
+        st.image(final_png, use_container_width=True)
+    with pdf_tab:
+        st.pdf(final_pdf, height=800, key=f"public_final_pdf_{existing.id}")
+    pdf_col, png_col = st.columns(2)
+    pdf_col.download_button(
+        "BAIXAR EM PDF",
         final_pdf,
         f"rdv_concluido_{existing.id:06d}.pdf",
         "application/pdf",
         type="primary",
+        use_container_width=True,
+    )
+    png_col.download_button(
+        "BAIXAR EM PNG",
+        final_png,
+        f"rdv_concluido_{existing.id:06d}.png",
+        "image/png",
         use_container_width=True,
     )
     st.stop()
@@ -293,7 +307,7 @@ canvas_result = st_canvas(
     background_color="#FFFFFF",
     update_streamlit=True,
     height=180,
-    width=700,
+    width=320,
     drawing_mode="freedraw",
     return_image_data=True,
     key=f"signature_{context}",

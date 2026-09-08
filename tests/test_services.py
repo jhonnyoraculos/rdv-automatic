@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 import database
 from database import Base
-from exports import rdv_to_csv, rdv_to_pdf, rdv_to_xlsx
+from exports import rdv_to_csv, rdv_to_pdf, rdv_to_png, rdv_to_xlsx
 from models import BenefitType, EmployeeRole, SubmissionStatus
 from services import (
     BusinessError,
@@ -15,6 +15,10 @@ from services import (
     create_employee,
     create_period,
     create_rdv,
+    delete_rdv,
+    get_active_period,
+    get_periods,
+    get_rdv,
     reject_rdv,
 )
 from utils import date_range, signature_from_canvas
@@ -88,6 +92,7 @@ def test_individual_exports_are_generated() -> None:
         _entries(period.start_date, period.end_date),
     )
     assert rdv_to_pdf(rdv).startswith(b"%PDF")
+    assert rdv_to_png(rdv).startswith(b"\x89PNG")
     assert rdv_to_xlsx(rdv).startswith(b"PK")
     assert rdv_to_csv(rdv).startswith(b"\xef\xbb\xbf")
 
@@ -181,3 +186,32 @@ def test_manager_rejection_restarts_the_full_signature_flow() -> None:
     assert corrected.status == SubmissionStatus.ENVIADO
     assert corrected.analyst_signature_data is None
     assert corrected.manager_signature_data is None
+
+
+def test_admin_can_delete_rdv_so_employee_can_submit_again() -> None:
+    employee = create_employee("Nina Teste", EmployeeRole.MOTORISTA)
+    period = create_period(date(2026, 9, 1), date(2026, 9, 1), active=True)
+    entries = _entries(period.start_date, period.end_date)
+    rdv = _create_test_rdv(employee.id, period.id, entries)
+
+    delete_rdv(rdv.id, "ANALISTA", "analista")
+
+    assert get_rdv(rdv.id) is None
+    replacement = _create_test_rdv(employee.id, period.id, entries)
+    assert replacement.status == SubmissionStatus.ENVIADO
+
+
+def test_next_fortnight_is_created_and_activated_automatically() -> None:
+    current = create_period(date(2026, 8, 31), date(2026, 9, 12), active=True)
+
+    active = get_active_period(date(2026, 9, 8))
+    assert active and active.id == current.id
+    upcoming = next(
+        period for period in get_periods() if period.start_date == date(2026, 9, 14)
+    )
+    assert upcoming.end_date == date(2026, 9, 26)
+    assert not upcoming.active
+
+    new_active = get_active_period(date(2026, 9, 14))
+    assert new_active and new_active.id == upcoming.id
+    assert new_active.active

@@ -2,6 +2,7 @@ streamlit[pdf]>=1.58,<2
 streamlit-drawable-canvas>=0.13,<1
 numpy>=1.26,<3
 Pillow>=10,<13
+pypdfium2>=5.10,<6
 SQLAlchemy>=2.0,<3
 python-dotenv>=1.0,<2
 bcrypt>=4.1,<6

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
+from threading import Lock
 from typing import Any
 
 from sqlalchemy import func, select
@@ -30,6 +31,7 @@ from utils import (
 )
 
 logger = logging.getLogger("rdv")
+_period_rollover_lock = Lock()
 
 
 class BusinessError(ValueError):
@@ -193,19 +195,62 @@ def update_period(
 
 
 def get_periods() -> list[RdvPeriod]:
+    # Also creates/activates the rolling fortnight before listing periods.
+    get_active_period()
     with session_scope() as session:
         return list(
             session.scalars(select(RdvPeriod).order_by(RdvPeriod.start_date.desc()))
         )
 
 
-def get_active_period() -> RdvPeriod | None:
-    with session_scope() as session:
-        return session.scalar(
+def get_active_period(reference_date: date | None = None) -> RdvPeriod | None:
+    today = reference_date or now_sp().date()
+    with _period_rollover_lock, session_scope() as session:
+        active = session.scalar(
             select(RdvPeriod)
             .where(RdvPeriod.active.is_(True))
             .order_by(RdvPeriod.created_at.desc())
         )
+        if not active:
+            return None
+
+        while True:
+            next_start = active.end_date + timedelta(days=2)
+            next_end = next_start + timedelta(days=12)
+            upcoming = session.scalar(
+                select(RdvPeriod).where(
+                    RdvPeriod.start_date == next_start,
+                    RdvPeriod.end_date == next_end,
+                )
+            )
+            if not upcoming:
+                upcoming = RdvPeriod(
+                    start_date=next_start,
+                    end_date=next_end,
+                    description="Quinzena gerada automaticamente",
+                    active=False,
+                    created_at=now_sp(),
+                )
+                session.add(upcoming)
+                session.flush()
+                logger.info(
+                    "Próxima quinzena criada automaticamente: %s a %s",
+                    next_start,
+                    next_end,
+                )
+            if today < next_start:
+                return active
+
+            _deactivate_periods(session, except_id=upcoming.id)
+            session.flush()
+            upcoming.active = True
+            session.flush()
+            active = upcoming
+            logger.info(
+                "Quinzena ativada automaticamente: id=%s início=%s",
+                active.id,
+                active.start_date,
+            )
 
 
 def get_period(period_id: int) -> RdvPeriod | None:
@@ -530,6 +575,29 @@ def reject_rdv(
         session.flush()
         logger.info("RDV rejeitado por %s: id=%s", role, submission.id)
     return get_rdv(submission_id)  # type: ignore[return-value]
+
+
+def delete_rdv(submission_id: int, reviewer_role: str, reviewer_username: str) -> None:
+    role = str(getattr(reviewer_role, "value", reviewer_role)).upper()
+    if role not in {"ANALISTA", "GESTOR"}:
+        raise BusinessError("Perfil administrativo inválido.")
+    try:
+        username = clean_text(
+            reviewer_username, "Usuário responsável", 100, required=True
+        )
+    except ValueError as exc:
+        raise BusinessError(str(exc)) from exc
+    with session_scope() as session:
+        submission = session.get(RdvSubmission, submission_id)
+        if not submission:
+            raise BusinessError("RDV não encontrado.")
+        session.delete(submission)
+        logger.warning(
+            "RDV excluído para novo preenchimento: id=%s perfil=%s usuário=%s",
+            submission_id,
+            role,
+            username,
+        )
 
 
 def dashboard_stats(period_id: int | None = None) -> dict[str, Any]:

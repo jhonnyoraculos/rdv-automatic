@@ -44,7 +44,13 @@ with edit_tab:
                     "Início": format_date(period.start_date),
                     "Fim": format_date(period.end_date),
                     "Descrição": period.description or "—",
-                    "Status": "ATIVO" if period.active else "Encerrado",
+                    "Status": (
+                        "ATIVO"
+                        if period.active
+                        else "AGENDADO"
+                        if period.start_date > now_sp().date()
+                        else "Encerrado"
+                    ),
                 }
                 for period in periods
             ]
@@ -92,5 +98,6 @@ with edit_tab:
             except BusinessError as exc:
                 st.error(str(exc))
 st.info(
-    "Ao ativar um período, qualquer outro período ativo é encerrado automaticamente."
+    "A próxima quinzena é criada automaticamente com 13 dias e um dia de intervalo. "
+    "Exemplo: após 31/08 a 12/09, o sistema agenda 14/09 a 26/09 e a ativa na data inicial."
 )

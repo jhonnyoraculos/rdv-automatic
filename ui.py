@@ -43,6 +43,11 @@ APP_CSS = """
         .block-container { padding: .8rem .75rem 2rem; }
         .jr-header { padding:12px; }
         .jr-header h1 { font-size:1.18rem; }
+        div[data-testid="stHorizontalBlock"] { flex-wrap:wrap; }
+        div[data-testid="column"] { min-width:100% !important; width:100% !important; }
+        div.stButton > button, div.stDownloadButton > button { min-height:48px; }
+        div[data-testid="stDataFrame"] { overflow-x:auto; }
+        iframe, img { max-width:100%; }
     }
 </style>
 """

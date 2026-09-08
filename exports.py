@@ -290,3 +290,24 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
     canvas.setTitle(protocol(rdv.id))
     canvas.save()
     return buffer.getvalue()
+
+
+def pdf_to_png(pdf_data: bytes, scale: float = 3.0) -> bytes:
+    import pypdfium2 as pdfium
+
+    document = pdfium.PdfDocument(pdf_data)
+    try:
+        page = document[0]
+        try:
+            image = page.render(scale=scale).to_pil()
+            output = BytesIO()
+            image.save(output, format="PNG", optimize=True)
+            return output.getvalue()
+        finally:
+            page.close()
+    finally:
+        document.close()
+
+
+def rdv_to_png(rdv: RdvSubmission) -> bytes:
+    return pdf_to_png(rdv_to_pdf(rdv))

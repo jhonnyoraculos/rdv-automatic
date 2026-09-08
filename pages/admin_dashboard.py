@@ -10,12 +10,13 @@ from auth import (
     current_admin_username,
     switch_admin_role,
 )
-from exports import rdv_to_csv, rdv_to_pdf, rdv_to_xlsx, rdvs_to_xlsx
+from exports import pdf_to_png, rdv_to_csv, rdv_to_pdf, rdv_to_xlsx, rdvs_to_xlsx
 from models import EmployeeRole, SubmissionStatus
 from services import (
     BusinessError,
     approve_rdv,
     dashboard_stats,
+    delete_rdv,
     get_periods,
     get_rdv,
     get_rdvs,
@@ -49,6 +50,8 @@ role_label = (
 company_header(
     "Painel RDV", f"{role_label} — acompanhamento e aprovação dos relatórios"
 )
+if notice := st.session_state.pop("dashboard_notice", None):
+    st.success(notice)
 role_options = list(AdminRole)
 selected_role = st.selectbox(
     "Perfil ativo para testes",
@@ -166,7 +169,7 @@ table_event = st.dataframe(
     hide_index=True,
     on_select="rerun",
     selection_mode="single-row",
-    key="rdv_list_table",
+    key=f"rdv_list_table_{st.session_state.get('rdv_table_revision', 0)}",
 )
 if rdvs:
     st.caption("Clique em uma linha da tabela para abrir a folha do RDV.")
@@ -225,10 +228,15 @@ with details_right:
         st.write(f"**Motivo da rejeição:** {rdv.admin_comment}")
 
 pdf_data = rdv_to_pdf(rdv)
+png_data = pdf_to_png(pdf_data)
 st.subheader("Folha do RDV para conferência")
-st.pdf(pdf_data, height=800, key=f"rdv_pdf_{rdv.id}_{rdv.updated_at}")
+mobile_tab, pdf_tab = st.tabs(["Visualização para celular", "Visualização em PDF"])
+with mobile_tab:
+    st.image(png_data, use_container_width=True)
+with pdf_tab:
+    st.pdf(pdf_data, height=800, key=f"rdv_pdf_{rdv.id}_{rdv.updated_at}")
 
-download_cols = st.columns(3)
+download_cols = st.columns(4)
 download_cols[0].download_button(
     "Baixar PDF",
     pdf_data,
@@ -237,13 +245,20 @@ download_cols[0].download_button(
     use_container_width=True,
 )
 download_cols[1].download_button(
+    "Baixar PNG",
+    png_data,
+    f"rdv_{rdv.id:06d}.png",
+    "image/png",
+    use_container_width=True,
+)
+download_cols[2].download_button(
     "Baixar Excel",
     rdv_to_xlsx(rdv),
     f"rdv_{rdv.id:06d}.xlsx",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     use_container_width=True,
 )
-download_cols[2].download_button(
+download_cols[3].download_button(
     "Baixar CSV",
     rdv_to_csv(rdv),
     f"rdv_{rdv.id:06d}.csv",
@@ -262,7 +277,7 @@ if can_review:
         background_color="#FFFFFF",
         update_streamlit=True,
         height=180,
-        width=700,
+        width=320,
         drawing_mode="freedraw",
         return_image_data=True,
         key=f"approval_signature_{approval_context}",
@@ -315,6 +330,35 @@ elif rdv.status in (
     SubmissionStatus.AGUARDANDO_GESTOR,
 ):
     st.info(f"Este RDV está na etapa: {submission_status_label(rdv.status).lower()}.")
+
+with st.expander("Excluir esta folha para o colaborador refazer", expanded=False):
+    st.warning(
+        "A exclusão remove a folha e todas as assinaturas. O colaborador poderá preencher e enviar um novo RDV para esta quinzena."
+    )
+    delete_confirmed = st.checkbox(
+        "Confirmo que desejo excluir definitivamente esta folha.",
+        key=f"delete_confirmed_{rdv.id}_{rdv.updated_at}",
+    )
+    if st.button(
+        "EXCLUIR FOLHA E LIBERAR NOVO PREENCHIMENTO",
+        type="primary",
+        disabled=not delete_confirmed,
+        use_container_width=True,
+        key=f"delete_rdv_{rdv.id}",
+    ):
+        try:
+            deleted_protocol = protocol(rdv.id)
+            delete_rdv(rdv.id, admin_role.value, admin_username)
+            st.session_state.pop("opened_rdv_id", None)
+            st.session_state["rdv_table_revision"] = (
+                st.session_state.get("rdv_table_revision", 0) + 1
+            )
+            st.session_state["dashboard_notice"] = (
+                f"{deleted_protocol} excluído. O colaborador já pode refazer a folha."
+            )
+            st.rerun()
+        except BusinessError as exc:
+            st.error(str(exc))
 
 with st.expander("Ver lançamentos e totais detalhados"):
     entry_rows = [
