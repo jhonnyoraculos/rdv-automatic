@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+import streamlit as st
+
+from auth import is_authenticated
+
+APP_CSS = """
+<style>
+    :root { --jr-red: #b5122b; --jr-blue: #143a66; --ink: #172033; }
+    .stApp { background: #f5f7fa; color: var(--ink); }
+    .block-container { max-width: 1180px; padding-top: 1.6rem; padding-bottom: 3rem; }
+    h1, h2, h3 { color: var(--ink); letter-spacing: -0.02em; }
+    div[data-testid="stMetric"] {
+        background: white; border: 1px solid #e5e9f0; border-radius: 14px;
+        padding: 1rem 1.1rem; box-shadow: 0 5px 20px rgba(20,58,102,.05);
+    }
+    div[data-testid="stMetric"] label { color: #596274; }
+    div[data-testid="stExpander"] { background: white; border: 1px solid #e2e7ee; border-radius: 12px; }
+    div.stButton > button[kind="primary"], div.stDownloadButton > button[kind="primary"] {
+        background: var(--jr-red); border-color: var(--jr-red); font-weight: 700;
+    }
+    .jr-header {
+        display:flex; align-items:center; gap:14px; background:white; padding:16px 20px;
+        border-radius:16px; border-top:4px solid var(--jr-red); margin-bottom:1rem;
+        box-shadow:0 7px 26px rgba(20,58,102,.07);
+    }
+    .jr-logo {
+        width:48px; height:48px; border-radius:10px; display:flex; align-items:center;
+        justify-content:center; color:white; background:linear-gradient(145deg,#d31637,#a40b22);
+        font-weight:900; font-size:21px; letter-spacing:-2px;
+    }
+    .jr-header h1 { margin:0; font-size:1.5rem; }
+    .jr-header p { margin:3px 0 0; color:#667085; }
+    .info-strip { background:#eef3f9; border-left:4px solid var(--jr-blue); padding:12px 15px; border-radius:8px; }
+    .status { display:inline-block; padding:4px 9px; border-radius:99px; font-size:.78rem; font-weight:800; }
+    .status-enviado { background:#fff1cc; color:#8a5b00; }
+    .status-aprovado { background:#dff6e8; color:#116b39; }
+    .status-rejeitado { background:#fde2e5; color:#a11427; }
+    @media (max-width: 640px) {
+        .block-container { padding: .8rem .75rem 2rem; }
+        .jr-header { padding:12px; }
+        .jr-header h1 { font-size:1.18rem; }
+    }
+</style>
+"""
+
+
+def apply_style() -> None:
+    st.markdown(APP_CSS, unsafe_allow_html=True)
+
+
+def company_header(title: str, subtitle: str = "JR Ferragens & Madeiras") -> None:
+    st.markdown(
+        f'<div class="jr-header"><div class="jr-logo">JR</div><div><h1>{title}</h1><p>{subtitle}</p></div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def require_admin() -> None:
+    if not is_authenticated():
+        st.error("Acesso restrito. Entre com uma conta administrativa.")
+        if st.button("Ir para o login", type="primary"):
+            st.switch_page("pages/admin_login.py")
+        st.stop()
+
+
+def status_badge(status: str) -> None:
+    normalized = status.lower()
+    st.markdown(
+        f'<span class="status status-{normalized}">{status}</span>',
+        unsafe_allow_html=True,
+    )
