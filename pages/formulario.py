@@ -5,7 +5,6 @@ from html import escape
 
 import pandas as pd
 import streamlit as st
-from streamlit_drawable_canvas import st_canvas
 
 from exports import pdf_to_png, rdv_to_pdf
 from models import BenefitType, EmployeeRole, SubmissionStatus
@@ -16,6 +15,7 @@ from services import (
     get_active_period,
     get_submission_for_employee_period,
 )
+from signature_component import signature_pad
 from ui import company_header
 from utils import (
     WEEKDAYS_PT,
@@ -26,7 +26,6 @@ from utils import (
     money,
     now_sp,
     protocol,
-    signature_from_canvas,
 )
 
 company_header(
@@ -316,22 +315,13 @@ if not st.session_state.get(signature_pad_key):
         st.session_state[signature_pad_key] = True
         st.rerun()
 else:
-    st.caption("Assine no quadro abaixo usando o mouse ou o dedo.")
-    canvas_result = st_canvas(
-        stroke_width=4,
-        stroke_color="#172033",
-        background_color="#FFFFFF",
-        update_streamlit=True,
-        height=190,
-        width=320,
-        drawing_mode="freedraw",
-        return_image_data=True,
-        key=f"signature_{context}",
+    st.caption(
+        "Use Ampliar tela se quiser mais espaço. Ao terminar, toque em Concluir assinatura."
     )
-    current_signature = signature_from_canvas(canvas_result.image_data)
+    current_signature = signature_pad(key=f"signature_{context}")
     if current_signature:
         st.session_state[signature_state_key] = current_signature
-    elif canvas_result.image_data is not None:
+    else:
         st.session_state.pop(signature_state_key, None)
 signature_png = st.session_state.get(signature_state_key)
 if signature_png:

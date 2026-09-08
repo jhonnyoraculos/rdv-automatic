@@ -6,6 +6,7 @@ Aplicação Streamlit para envio, análise e exportação dos RDVs de motoristas
 
 - formulário responsivo gerado a partir do período ativo;
 - local, data e assinatura desenhada obrigatórios no envio, impressos na folha do RDV;
+- quadro de assinatura responsivo, com modo ampliado para celular, desfazer e limpar;
 - aprovação em duas etapas, com assinatura do analista e aprovação final assinada pelo gestor;
 - folha concluída com as três assinaturas disponível ao colaborador, analista e gestor;
 - folha disponível para visualização e download em PDF e PNG;

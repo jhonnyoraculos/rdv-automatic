@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
-from streamlit_drawable_canvas import st_canvas
 
 from auth import (
     AdminRole,
@@ -22,6 +21,7 @@ from services import (
     get_rdvs,
     reject_rdv,
 )
+from signature_component import signature_pad
 from ui import (
     company_header,
     require_admin,
@@ -35,7 +35,6 @@ from utils import (
     format_datetime,
     now_sp,
     protocol,
-    signature_from_canvas,
 )
 
 require_admin()
@@ -271,22 +270,11 @@ if can_review:
     st.subheader(f"Assinatura e aprovação — {role_label}")
     st.caption("Assine no quadro usando o mouse ou o dedo antes de aprovar.")
     approval_context = f"{admin_role.value}_{rdv.id}_{rdv.updated_at}"
-    canvas_result = st_canvas(
-        stroke_width=4,
-        stroke_color="#172033",
-        background_color="#FFFFFF",
-        update_streamlit=True,
-        height=190,
-        width=320,
-        drawing_mode="freedraw",
-        return_image_data=True,
-        key=f"approval_signature_{approval_context}",
-    )
     signature_state_key = f"approval_signature_png_{approval_context}"
-    current_signature = signature_from_canvas(canvas_result.image_data)
+    current_signature = signature_pad(key=f"approval_signature_{approval_context}")
     if current_signature:
         st.session_state[signature_state_key] = current_signature
-    elif canvas_result.image_data is not None:
+    else:
         st.session_state.pop(signature_state_key, None)
     approval_signature = st.session_state.get(signature_state_key)
     if approval_signature:
