@@ -210,14 +210,14 @@ st.subheader("Resumo do RDV")
 metric_columns = st.columns(4)
 metric_columns[0].metric("Diárias", format_brl(totals["daily_total"]))
 metric_columns[1].metric("Tickets", format_brl(totals["ticket_total"]))
-metric_columns[2].metric("Hotéis", format_brl(totals["hotel_total"]))
-metric_columns[3].metric("Total de despesas", format_brl(totals["expense_total"]))
+metric_columns[2].metric("Hotéis (informativo)", format_brl(totals["hotel_total"]))
+metric_columns[3].metric("Total da quinzena", format_brl(totals["expense_total"]))
 if advance_answer == "Sim":
-    advance_columns = st.columns(2)
-    advance_columns[0].metric(
-        "Adiantamento recebido", format_brl(totals["advance_total"])
+    st.metric(
+        "Adiantamento recebido (informativo)",
+        format_brl(totals["advance_total"]),
     )
-    advance_columns[1].metric("Saldo", format_brl(totals["balance"]))
+st.caption("O total da quinzena considera somente diárias e tickets. Hotéis e adiantamento não entram no cálculo.")
 
 st.subheader("Revisão")
 review_rows = []

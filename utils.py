@@ -109,7 +109,9 @@ def calculate_rdv_totals(
         elif kind == "TICKET":
             ticket_total += benefit
         hotel_total += hotel
-    expense_total = daily_total + ticket_total + hotel_total
+    # Regra da empresa: hotel e adiantamento são apenas informativos.
+    # O total da quinzena considera exclusivamente diária e ticket.
+    expense_total = daily_total + ticket_total
     advance_total = money(advance_amount, "Adiantamento")
     return {
         "daily_total": daily_total.quantize(MONEY_QUANT),
@@ -117,5 +119,5 @@ def calculate_rdv_totals(
         "hotel_total": hotel_total.quantize(MONEY_QUANT),
         "expense_total": expense_total.quantize(MONEY_QUANT),
         "advance_total": advance_total,
-        "balance": (expense_total - advance_total).quantize(MONEY_QUANT),
+        "balance": expense_total.quantize(MONEY_QUANT),
     }

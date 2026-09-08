@@ -6,7 +6,7 @@ Aplicação Streamlit para envio, análise e exportação dos RDVs de motoristas
 
 - formulário responsivo gerado a partir do período ativo;
 - modelos distintos para motorista e ajudante;
-- totais de diária, ticket, hotel, adiantamento e saldo em `Decimal`;
+- total da quinzena formado somente por diária e ticket, com hotel e adiantamento mantidos como informações separadas em `Decimal`;
 - correção do mesmo protocolo quando um RDV é rejeitado;
 - painel com filtros, aprovação, rejeição e indicadores;
 - cadastro e desativação de colaboradores;

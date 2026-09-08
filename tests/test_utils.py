@@ -38,7 +38,21 @@ def test_central_totals() -> None:
         "daily_total": Decimal("100.10"),
         "ticket_total": Decimal("20.25"),
         "hotel_total": Decimal("50.00"),
-        "expense_total": Decimal("170.35"),
+        "expense_total": Decimal("120.35"),
         "advance_total": Decimal("30.00"),
-        "balance": Decimal("140.35"),
+        "balance": Decimal("120.35"),
     }
+
+
+def test_hotel_and_advance_do_not_change_fortnight_total() -> None:
+    entries = [
+        {
+            "benefit_type": "DIARIA",
+            "benefit_amount": "80.00",
+            "hotel_amount": "900.00",
+        }
+    ]
+    totals = calculate_rdv_totals(entries, "500.00")
+    assert totals["expense_total"] == Decimal("80.00")
+    assert totals["hotel_total"] == Decimal("900.00")
+    assert totals["advance_total"] == Decimal("500.00")
