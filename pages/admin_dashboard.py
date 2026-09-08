@@ -4,7 +4,12 @@ import pandas as pd
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 
-from auth import AdminRole, current_admin_role, current_admin_username
+from auth import (
+    AdminRole,
+    current_admin_role,
+    current_admin_username,
+    switch_admin_role,
+)
 from exports import rdv_to_csv, rdv_to_pdf, rdv_to_xlsx, rdvs_to_xlsx
 from models import EmployeeRole, SubmissionStatus
 from services import (
@@ -43,6 +48,23 @@ role_label = (
 )
 company_header(
     "Painel RDV", f"{role_label} — acompanhamento e aprovação dos relatórios"
+)
+role_options = list(AdminRole)
+selected_role = st.selectbox(
+    "Perfil ativo para testes",
+    role_options,
+    index=role_options.index(admin_role),
+    format_func=lambda role: (
+        "Analista de frota" if role == AdminRole.ANALISTA else "Gestor de frota"
+    ),
+    key="test_role_switcher",
+    help="Opção temporária para testar as duas etapas sem sair da conta.",
+)
+if selected_role != admin_role:
+    switch_admin_role(selected_role)
+    st.rerun()
+st.caption(
+    "Modo temporário de testes: troque o perfil acima para executar a etapa do analista ou do gestor."
 )
 
 periods = get_periods()

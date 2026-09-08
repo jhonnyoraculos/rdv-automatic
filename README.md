@@ -7,6 +7,7 @@ Aplicação Streamlit para envio, análise e exportação dos RDVs de motoristas
 - formulário responsivo gerado a partir do período ativo;
 - local, data e assinatura desenhada obrigatórios no envio, impressos na folha do RDV;
 - aprovação em duas etapas, com assinatura do analista e aprovação final assinada pelo gestor;
+- seletor temporário de perfil no painel para alternar entre analista e gestor durante os testes;
 - modelos distintos para motorista e ajudante;
 - total da quinzena formado somente por diária e ticket, com hotel e adiantamento mantidos como informações separadas em `Decimal`;
 - correção do mesmo protocolo quando um RDV é rejeitado;

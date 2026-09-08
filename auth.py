@@ -90,6 +90,15 @@ def current_admin_username() -> str:
     return str(st.session_state.get("admin_username", "")).strip()
 
 
+def switch_admin_role(role: AdminRole | str) -> AdminRole:
+    if not is_authenticated():
+        raise PermissionError("É necessário estar autenticado para trocar o perfil.")
+    selected_role = role if isinstance(role, AdminRole) else AdminRole(str(role))
+    st.session_state["admin_role"] = selected_role.value
+    st.session_state.pop("opened_rdv_id", None)
+    return selected_role
+
+
 def login(username: str, password: str) -> bool:
     role = verify_credentials(username, password)
     if role:
@@ -107,6 +116,7 @@ def logout() -> None:
         "admin_role",
         "selected_rdv_id",
         "opened_rdv_id",
+        "test_role_switcher",
     ):
         st.session_state.pop(key, None)
 
