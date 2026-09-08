@@ -98,17 +98,26 @@ for rdv in rdvs:
         }
     )
 rdv_table = pd.DataFrame(rows)
+display_table = rdv_table
 if not rdv_table.empty:
     status_colors = {
         "ENVIADO": "background-color: #fff1cc; color: #8a5b00; font-weight: 700",
         "APROVADO": "background-color: #dff6e8; color: #116b39; font-weight: 700",
         "REJEITADO": "background-color: #fde2e5; color: #a11427; font-weight: 700",
     }
-    rdv_table = rdv_table.style.map(
+    display_table = rdv_table.style.map(
         lambda value: status_colors.get(str(value), ""), subset=["Status"]
     )
-st.dataframe(rdv_table, use_container_width=True, hide_index=True)
+table_event = st.dataframe(
+    display_table,
+    use_container_width=True,
+    hide_index=True,
+    on_select="rerun",
+    selection_mode="single-row",
+    key="rdv_list_table",
+)
 if rdvs:
+    st.caption("Clique em uma linha da tabela para abrir a folha do RDV.")
     st.download_button(
         "Baixar Excel dos resultados filtrados",
         data=rdvs_to_xlsx(rdvs),
@@ -118,20 +127,15 @@ if rdvs:
 else:
     st.caption("Nenhum RDV encontrado com os filtros escolhidos.")
 
-selected_id = st.selectbox(
-    "Abrir relatório",
-    [None, *[rdv.id for rdv in rdvs]],
-    format_func=lambda value: (
-        "Selecione um protocolo..."
-        if value is None
-        else next(
-            f"{protocol(item.id)} — {item.employee.name}"
-            for item in rdvs
-            if item.id == value
-        )
-    ),
-    key="selected_rdv_id",
-)
+available_ids = [item.id for item in rdvs]
+selected_id = st.session_state.get("opened_rdv_id")
+selected_rows = table_event.selection.rows
+if selected_rows:
+    selected_id = rdvs[selected_rows[0]].id
+    st.session_state["opened_rdv_id"] = selected_id
+elif selected_id not in available_ids:
+    selected_id = available_ids[0] if len(available_ids) == 1 else None
+    st.session_state["opened_rdv_id"] = selected_id
 if selected_id is None:
     st.stop()
 
@@ -158,34 +162,14 @@ with details_right:
     if rdv.admin_comment:
         st.write(f"**Motivo da rejeição:** {rdv.admin_comment}")
 
-entry_rows = [
-    {
-        "Data": format_date(entry.date),
-        "Cidade": entry.city or "—",
-        "Hotel": entry.hotel_name or "—",
-        "Valor hotel": format_brl(entry.hotel_amount),
-        "Tipo": {"NONE": "Nenhum", "DIARIA": "Diária", "TICKET": "Ticket"}[
-            entry.benefit_type.value
-        ],
-        "Valor": format_brl(entry.benefit_amount),
-    }
-    for entry in rdv.entries
-]
-st.dataframe(pd.DataFrame(entry_rows), use_container_width=True, hide_index=True)
-totals = calculate_rdv_totals(rdv.entries, rdv.advance_amount)
-total_cols = st.columns(3)
-total_cols[0].metric("Total diária", format_brl(totals["daily_total"]))
-total_cols[1].metric("Total ticket", format_brl(totals["ticket_total"]))
-total_cols[2].metric("Total hotel (informativo)", format_brl(totals["hotel_total"]))
-total_cols = st.columns(2)
-total_cols[0].metric("Total da quinzena", format_brl(totals["expense_total"]))
-total_cols[1].metric("Adiantamento (informativo)", format_brl(totals["advance_total"]))
-st.caption("O total da quinzena considera somente diárias e tickets.")
+pdf_data = rdv_to_pdf(rdv)
+st.subheader("Folha do RDV para conferência")
+st.pdf(pdf_data, height=800, key=f"rdv_pdf_{rdv.id}_{rdv.updated_at}")
 
 download_cols = st.columns(3)
 download_cols[0].download_button(
     "Baixar PDF",
-    rdv_to_pdf(rdv),
+    pdf_data,
     f"rdv_{rdv.id:06d}.pdf",
     "application/pdf",
     use_container_width=True,
@@ -226,3 +210,30 @@ if rdv.status == SubmissionStatus.ENVIADO:
                 st.rerun()
             except BusinessError as exc:
                 st.error(str(exc))
+
+with st.expander("Ver lançamentos e totais detalhados"):
+    entry_rows = [
+        {
+            "Data": format_date(entry.date),
+            "Cidade": entry.city or "—",
+            "Hotel": entry.hotel_name or "—",
+            "Valor hotel": format_brl(entry.hotel_amount),
+            "Tipo": {"NONE": "Nenhum", "DIARIA": "Diária", "TICKET": "Ticket"}[
+                entry.benefit_type.value
+            ],
+            "Valor": format_brl(entry.benefit_amount),
+        }
+        for entry in rdv.entries
+    ]
+    st.dataframe(pd.DataFrame(entry_rows), use_container_width=True, hide_index=True)
+    totals = calculate_rdv_totals(rdv.entries, rdv.advance_amount)
+    total_cols = st.columns(3)
+    total_cols[0].metric("Total diária", format_brl(totals["daily_total"]))
+    total_cols[1].metric("Total ticket", format_brl(totals["ticket_total"]))
+    total_cols[2].metric("Total hotel (informativo)", format_brl(totals["hotel_total"]))
+    total_cols = st.columns(2)
+    total_cols[0].metric("Total da quinzena", format_brl(totals["expense_total"]))
+    total_cols[1].metric(
+        "Adiantamento (informativo)", format_brl(totals["advance_total"])
+    )
+    st.caption("O total da quinzena considera somente diárias e tickets.")
