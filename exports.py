@@ -252,15 +252,20 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
     )
     signature_y = 60
     labels = ["ASSINATURA DO COLABORADOR", "ANALISTA DE FROTA", "GESTOR DE FROTA"]
+    signatures = [
+        getattr(rdv, "signature_data", None),
+        getattr(rdv, "analyst_signature_data", None),
+        getattr(rdv, "manager_signature_data", None),
+    ]
     signature_width = (table_width - 30) / 3
     for index, label in enumerate(labels):
         start = margin + index * (signature_width + 15)
         canvas.drawCentredString(start + signature_width / 2, signature_y + 30, label)
         canvas.line(start, signature_y, start + signature_width, signature_y)
-        if index == 0 and getattr(rdv, "signature_data", None):
+        if signatures[index]:
             _draw_signature(
                 canvas,
-                rdv.signature_data,
+                signatures[index],
                 start + 3,
                 signature_y + 2,
                 signature_width - 6,

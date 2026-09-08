@@ -11,6 +11,7 @@ from exports import rdv_to_csv, rdv_to_pdf, rdv_to_xlsx
 from models import BenefitType, EmployeeRole, SubmissionStatus
 from services import (
     BusinessError,
+    approve_rdv,
     create_employee,
     create_period,
     create_rdv,
@@ -136,3 +137,47 @@ def test_signature_and_location_are_required() -> None:
             date(2026, 9, 8),
             b"",
         )
+
+
+def test_approval_follows_analyst_then_manager_workflow() -> None:
+    employee = create_employee("Rui Teste", EmployeeRole.MOTORISTA)
+    period = create_period(date(2026, 9, 1), date(2026, 9, 1), active=True)
+    rdv = _create_test_rdv(
+        employee.id, period.id, _entries(period.start_date, period.end_date)
+    )
+
+    analyst_approved = approve_rdv(rdv.id, "ANALISTA", _signature(), "analista")
+    assert analyst_approved.status == SubmissionStatus.AGUARDANDO_GESTOR
+    assert analyst_approved.analyst_signature_data
+    assert analyst_approved.analyst_username == "analista"
+
+    manager_approved = approve_rdv(rdv.id, "GESTOR", _signature(), "gestor")
+    assert manager_approved.status == SubmissionStatus.APROVADO
+    assert manager_approved.manager_signature_data
+    assert manager_approved.manager_username == "gestor"
+    assert rdv_to_pdf(manager_approved).startswith(b"%PDF")
+
+
+def test_manager_cannot_approve_before_analyst() -> None:
+    employee = create_employee("Eva Teste", EmployeeRole.MOTORISTA)
+    period = create_period(date(2026, 9, 1), date(2026, 9, 1), active=True)
+    rdv = _create_test_rdv(
+        employee.id, period.id, _entries(period.start_date, period.end_date)
+    )
+    with pytest.raises(BusinessError, match="gestor"):
+        approve_rdv(rdv.id, "GESTOR", _signature(), "gestor")
+
+
+def test_manager_rejection_restarts_the_full_signature_flow() -> None:
+    employee = create_employee("Leo Teste", EmployeeRole.MOTORISTA)
+    period = create_period(date(2026, 9, 1), date(2026, 9, 1), active=True)
+    entries = _entries(period.start_date, period.end_date)
+    rdv = _create_test_rdv(employee.id, period.id, entries)
+    approve_rdv(rdv.id, "ANALISTA", _signature(), "analista")
+
+    rejected = reject_rdv(rdv.id, "Corrigir cidade", "GESTOR")
+    assert rejected.status == SubmissionStatus.REJEITADO
+    corrected = _create_test_rdv(employee.id, period.id, entries)
+    assert corrected.status == SubmissionStatus.ENVIADO
+    assert corrected.analyst_signature_data is None
+    assert corrected.manager_signature_data is None

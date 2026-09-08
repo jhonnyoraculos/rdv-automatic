@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
+from streamlit_drawable_canvas import st_canvas
 
+from auth import AdminRole, current_admin_role, current_admin_username
 from exports import rdv_to_csv, rdv_to_pdf, rdv_to_xlsx, rdvs_to_xlsx
 from models import EmployeeRole, SubmissionStatus
 from services import (
@@ -14,7 +16,12 @@ from services import (
     get_rdvs,
     reject_rdv,
 )
-from ui import company_header, require_admin, status_badge
+from ui import (
+    company_header,
+    require_admin,
+    status_badge,
+    submission_status_label,
+)
 from utils import (
     calculate_rdv_totals,
     format_brl,
@@ -22,10 +29,21 @@ from utils import (
     format_datetime,
     now_sp,
     protocol,
+    signature_from_canvas,
 )
 
 require_admin()
-company_header("Painel RDV", "Acompanhamento e análise dos relatórios enviados")
+admin_role = current_admin_role()
+if admin_role is None:
+    st.error("Sua sessão não possui um perfil válido. Saia e entre novamente.")
+    st.stop()
+admin_username = current_admin_username()
+role_label = (
+    "Analista de frota" if admin_role == AdminRole.ANALISTA else "Gestor de frota"
+)
+company_header(
+    "Painel RDV", f"{role_label} — acompanhamento e aprovação dos relatórios"
+)
 
 periods = get_periods()
 period_by_id = {period.id: period for period in periods}
@@ -43,13 +61,21 @@ period_filter = st.selectbox(
     key="dashboard_period",
 )
 stats = dashboard_stats(period_filter)
-metric_cols = st.columns(4)
-metric_cols[0].metric("Aguardando análise", stats["counts"]["ENVIADO"])
-metric_cols[1].metric("Aprovados", stats["counts"]["APROVADO"])
-metric_cols[2].metric("Rejeitados", stats["counts"]["REJEITADO"])
-metric_cols[3].metric("Total da quinzena", format_brl(stats["expense_total"]))
-pending = stats["counts"]["ENVIADO"]
-st.info(f"{pending} RDV{'s' if pending != 1 else ''} aguardando análise.")
+metric_cols = st.columns(5)
+metric_cols[0].metric("Aguardando analista", stats["counts"]["ENVIADO"])
+metric_cols[1].metric("Aguardando gestor", stats["counts"]["AGUARDANDO_GESTOR"])
+metric_cols[2].metric("Aprovados", stats["counts"]["APROVADO"])
+metric_cols[3].metric("Rejeitados", stats["counts"]["REJEITADO"])
+metric_cols[4].metric("Total da quinzena", format_brl(stats["expense_total"]))
+assigned_status = (
+    SubmissionStatus.ENVIADO
+    if admin_role == AdminRole.ANALISTA
+    else SubmissionStatus.AGUARDANDO_GESTOR
+)
+pending = stats["counts"][assigned_status.value]
+st.info(
+    f"{pending} RDV{'s' if pending != 1 else ''} aguardando sua aprovação como {role_label.lower()}."
+)
 
 st.subheader("Relatórios")
 with st.expander("Filtros", expanded=False):
@@ -60,10 +86,13 @@ with st.expander("Filtros", expanded=False):
         [None, *EmployeeRole],
         format_func=lambda x: "Todas" if x is None else x.value,
     )
+    status_options = [None, *SubmissionStatus]
     status_filter = filter_cols[2].selectbox(
         "Status",
-        [None, *SubmissionStatus],
-        format_func=lambda x: "Todos" if x is None else x.value,
+        status_options,
+        index=status_options.index(assigned_status),
+        format_func=lambda x: "Todos" if x is None else submission_status_label(x),
+        key=f"dashboard_status_{admin_role.value}",
     )
     use_dates = st.checkbox("Filtrar pela data de envio")
     submitted_from = submitted_to = None
@@ -94,14 +123,15 @@ for rdv in rdvs:
             "Período": f"{format_date(rdv.period.start_date)} a {format_date(rdv.period.end_date)}",
             "Total": format_brl(total),
             "Envio": format_datetime(rdv.submitted_at),
-            "Status": rdv.status.value,
+            "Status": submission_status_label(rdv.status),
         }
     )
 rdv_table = pd.DataFrame(rows)
 display_table = rdv_table
 if not rdv_table.empty:
     status_colors = {
-        "ENVIADO": "background-color: #fff1cc; color: #8a5b00; font-weight: 700",
+        "AGUARDANDO ANALISTA": "background-color: #fff1cc; color: #8a5b00; font-weight: 700",
+        "AGUARDANDO GESTOR": "background-color: #dcecff; color: #154f8b; font-weight: 700",
         "APROVADO": "background-color: #dff6e8; color: #116b39; font-weight: 700",
         "REJEITADO": "background-color: #fde2e5; color: #a11427; font-weight: 700",
     }
@@ -161,6 +191,14 @@ with details_right:
     )
     st.write(f"**Revisado em:** {format_datetime(rdv.reviewed_at)}")
     st.write(f"**Data da assinatura:** {format_date(rdv.signed_date)}")
+    st.write(
+        f"**Analista:** {rdv.analyst_username or 'Pendente'}"
+        f" — {format_datetime(rdv.analyst_signed_at)}"
+    )
+    st.write(
+        f"**Gestor:** {rdv.manager_username or 'Pendente'}"
+        f" — {format_datetime(rdv.manager_signed_at)}"
+    )
     if rdv.admin_comment:
         st.write(f"**Motivo da rejeição:** {rdv.admin_comment}")
 
@@ -191,27 +229,68 @@ download_cols[2].download_button(
     use_container_width=True,
 )
 
-if rdv.status == SubmissionStatus.ENVIADO:
-    st.subheader("Análise")
+can_review = rdv.status == assigned_status
+if can_review:
+    st.subheader(f"Assinatura e aprovação — {role_label}")
+    st.caption("Assine no quadro usando o mouse ou o dedo antes de aprovar.")
+    approval_context = f"{admin_role.value}_{rdv.id}_{rdv.updated_at}"
+    canvas_result = st_canvas(
+        stroke_width=3,
+        stroke_color="#172033",
+        background_color="#FFFFFF",
+        update_streamlit=True,
+        height=180,
+        width=700,
+        drawing_mode="freedraw",
+        return_image_data=True,
+        key=f"approval_signature_{approval_context}",
+    )
+    signature_state_key = f"approval_signature_png_{approval_context}"
+    current_signature = signature_from_canvas(canvas_result.image_data)
+    if current_signature:
+        st.session_state[signature_state_key] = current_signature
+    elif canvas_result.image_data is not None:
+        st.session_state.pop(signature_state_key, None)
+    approval_signature = st.session_state.get(signature_state_key)
+    if approval_signature:
+        st.success("Assinatura registrada. O RDV está pronto para sua aprovação.")
+    else:
+        st.caption("A assinatura é obrigatória para aprovar.")
+
     action_cols = st.columns(2)
-    if action_cols[0].button("APROVAR RDV", type="primary", use_container_width=True):
+    if action_cols[0].button(
+        "ASSINAR E APROVAR",
+        type="primary",
+        disabled=approval_signature is None,
+        use_container_width=True,
+    ):
         try:
-            approve_rdv(rdv.id)
-            st.success("RDV aprovado.")
+            approved = approve_rdv(
+                rdv.id, admin_role.value, approval_signature, admin_username
+            )
+            if approved.status == SubmissionStatus.AGUARDANDO_GESTOR:
+                st.success("RDV assinado pelo analista e enviado ao gestor.")
+            else:
+                st.success("RDV assinado e aprovado definitivamente pelo gestor.")
             st.rerun()
         except BusinessError as exc:
             st.error(str(exc))
     with action_cols[1]:
-        with st.form(f"reject_{rdv.id}"):
+        with st.form(f"reject_{rdv.id}_{admin_role.value}"):
             reason = st.text_area("Motivo obrigatório para rejeitar", max_chars=1000)
             reject = st.form_submit_button("REJEITAR RDV", use_container_width=True)
         if reject:
             try:
-                reject_rdv(rdv.id, reason)
-                st.success("RDV rejeitado e liberado para correção.")
+                reject_rdv(rdv.id, reason, admin_role.value)
+                st.success("RDV rejeitado e liberado para correção do colaborador.")
                 st.rerun()
             except BusinessError as exc:
                 st.error(str(exc))
+elif rdv.status in (
+    SubmissionStatus.ENVIADO,
+    SubmissionStatus.AGUARDANDO_GESTOR,
+):
+    st.info(f"Este RDV está na etapa: {submission_status_label(rdv.status).lower()}.")
 
 with st.expander("Ver lançamentos e totais detalhados"):
     entry_rows = [

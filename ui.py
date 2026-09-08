@@ -36,6 +36,7 @@ APP_CSS = """
     .info-strip { background:#eef3f9; border-left:4px solid var(--jr-blue); padding:12px 15px; border-radius:8px; }
     .status { display:inline-block; padding:4px 9px; border-radius:99px; font-size:.78rem; font-weight:800; }
     .status-enviado { background:#fff1cc; color:#8a5b00; }
+    .status-aguardando_gestor { background:#dcecff; color:#154f8b; }
     .status-aprovado { background:#dff6e8; color:#116b39; }
     .status-rejeitado { background:#fde2e5; color:#a11427; }
     @media (max-width: 640px) {
@@ -72,6 +73,16 @@ def require_admin() -> None:
 def status_badge(status: str) -> None:
     normalized = status.lower()
     st.markdown(
-        f'<span class="status status-{normalized}">{status}</span>',
+        f'<span class="status status-{normalized}">{submission_status_label(status)}</span>',
         unsafe_allow_html=True,
     )
+
+
+def submission_status_label(status: object) -> str:
+    value = str(getattr(status, "value", status))
+    return {
+        "ENVIADO": "AGUARDANDO ANALISTA",
+        "AGUARDANDO_GESTOR": "AGUARDANDO GESTOR",
+        "APROVADO": "APROVADO",
+        "REJEITADO": "REJEITADO",
+    }.get(value, value)

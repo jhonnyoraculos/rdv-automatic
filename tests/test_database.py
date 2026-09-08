@@ -19,5 +19,15 @@ def test_init_db_adds_signature_columns_to_existing_database(
     columns = {
         column["name"] for column in inspect(engine).get_columns("rdv_submissions")
     }
-    assert {"location", "signed_date", "signature_data"} <= columns
+    assert {
+        "location",
+        "signed_date",
+        "signature_data",
+        "analyst_signature_data",
+        "analyst_signed_at",
+        "analyst_username",
+        "manager_signature_data",
+        "manager_signed_at",
+        "manager_username",
+    } <= columns
     engine.dispose()

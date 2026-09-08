@@ -335,6 +335,12 @@ def create_rdv(
                 submission.location = normalized_location
                 submission.signed_date = signed_date
                 submission.signature_data = normalized_signature
+                submission.analyst_signature_data = None
+                submission.analyst_signed_at = None
+                submission.analyst_username = None
+                submission.manager_signature_data = None
+                submission.manager_signed_at = None
+                submission.manager_username = None
                 submission.status = SubmissionStatus.ENVIADO
                 submission.submitted_at = timestamp
                 submission.reviewed_at = None
@@ -452,36 +458,77 @@ def get_rdvs(
         )
 
 
-def approve_rdv(submission_id: int) -> RdvSubmission:
+def approve_rdv(
+    submission_id: int,
+    reviewer_role: str,
+    signature_data: bytes,
+    reviewer_username: str,
+) -> RdvSubmission:
+    role = str(getattr(reviewer_role, "value", reviewer_role)).upper()
+    if role not in {"ANALISTA", "GESTOR"}:
+        raise BusinessError("Perfil de aprovação inválido.")
+    try:
+        username = clean_text(
+            reviewer_username, "Usuário responsável", 100, required=True
+        )
+        signature = validate_signature_png(signature_data)
+    except ValueError as exc:
+        raise BusinessError(str(exc)) from exc
+
     with session_scope() as session:
         submission = session.get(RdvSubmission, submission_id)
         if not submission:
             raise BusinessError("RDV não encontrado.")
-        if submission.status != SubmissionStatus.ENVIADO:
-            raise BusinessError("Somente um RDV enviado pode ser aprovado.")
-        submission.status = SubmissionStatus.APROVADO
-        submission.reviewed_at = now_sp()
+        timestamp = now_sp()
+        if role == "ANALISTA":
+            if submission.status != SubmissionStatus.ENVIADO:
+                raise BusinessError(
+                    "Este RDV não está aguardando a aprovação do analista."
+                )
+            submission.analyst_signature_data = signature
+            submission.analyst_signed_at = timestamp
+            submission.analyst_username = username
+            submission.status = SubmissionStatus.AGUARDANDO_GESTOR
+        else:
+            if submission.status != SubmissionStatus.AGUARDANDO_GESTOR:
+                raise BusinessError(
+                    "Este RDV não está aguardando a aprovação do gestor."
+                )
+            submission.manager_signature_data = signature
+            submission.manager_signed_at = timestamp
+            submission.manager_username = username
+            submission.status = SubmissionStatus.APROVADO
+        submission.reviewed_at = timestamp
         submission.admin_comment = None
-        submission.updated_at = now_sp()
+        submission.updated_at = timestamp
         session.flush()
-        logger.info("RDV aprovado: id=%s", submission.id)
+        logger.info("RDV aprovado por %s: id=%s", role, submission.id)
     return get_rdv(submission_id)  # type: ignore[return-value]
 
 
-def reject_rdv(submission_id: int, reason: str) -> RdvSubmission:
+def reject_rdv(
+    submission_id: int, reason: str, reviewer_role: str = "ANALISTA"
+) -> RdvSubmission:
     reason = clean_text(reason, "Motivo", 1000, required=True)
+    role = str(getattr(reviewer_role, "value", reviewer_role)).upper()
+    expected_status = {
+        "ANALISTA": SubmissionStatus.ENVIADO,
+        "GESTOR": SubmissionStatus.AGUARDANDO_GESTOR,
+    }.get(role)
+    if expected_status is None:
+        raise BusinessError("Perfil de aprovação inválido.")
     with session_scope() as session:
         submission = session.get(RdvSubmission, submission_id)
         if not submission:
             raise BusinessError("RDV não encontrado.")
-        if submission.status != SubmissionStatus.ENVIADO:
-            raise BusinessError("Somente um RDV enviado pode ser rejeitado.")
+        if submission.status != expected_status:
+            raise BusinessError("Este RDV não está na sua etapa de aprovação.")
         submission.status = SubmissionStatus.REJEITADO
         submission.reviewed_at = now_sp()
         submission.admin_comment = reason
         submission.updated_at = now_sp()
         session.flush()
-        logger.info("RDV rejeitado: id=%s", submission.id)
+        logger.info("RDV rejeitado por %s: id=%s", role, submission.id)
     return get_rdv(submission_id)  # type: ignore[return-value]
 
 

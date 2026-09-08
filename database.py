@@ -69,9 +69,11 @@ def init_db() -> None:
         if _initialized:
             return
         Base.metadata.create_all(bind=engine)
-        existing = {
-            column["name"] for column in inspect(engine).get_columns("rdv_submissions")
+        submission_columns = {
+            column["name"]: column
+            for column in inspect(engine).get_columns("rdv_submissions")
         }
+        existing = set(submission_columns)
         statements = []
         if "location" not in existing:
             statements.append(
@@ -83,6 +85,27 @@ def init_db() -> None:
             binary_type = "BYTEA" if engine.dialect.name == "postgresql" else "BLOB"
             statements.append(
                 f"ALTER TABLE rdv_submissions ADD COLUMN signature_data {binary_type}"
+            )
+        binary_type = "BYTEA" if engine.dialect.name == "postgresql" else "BLOB"
+        new_columns = {
+            "analyst_signature_data": binary_type,
+            "analyst_signed_at": "TIMESTAMP",
+            "analyst_username": "VARCHAR(100)",
+            "manager_signature_data": binary_type,
+            "manager_signed_at": "TIMESTAMP",
+            "manager_username": "VARCHAR(100)",
+        }
+        for column_name, column_type in new_columns.items():
+            if column_name not in existing:
+                statements.append(
+                    f"ALTER TABLE rdv_submissions ADD COLUMN {column_name} {column_type}"
+                )
+        status_length = getattr(
+            submission_columns.get("status", {}).get("type"), "length", None
+        )
+        if engine.dialect.name == "postgresql" and status_length and status_length < 32:
+            statements.append(
+                "ALTER TABLE rdv_submissions ALTER COLUMN status TYPE VARCHAR(32)"
             )
         if statements:
             with engine.begin() as connection:

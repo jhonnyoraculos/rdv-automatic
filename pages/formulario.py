@@ -72,13 +72,19 @@ if st.session_state.get("rdv_success_context") == base_context and st.session_st
     st.stop()
 if existing and existing.status in (
     SubmissionStatus.ENVIADO,
+    SubmissionStatus.AGUARDANDO_GESTOR,
     SubmissionStatus.APROVADO,
 ):
     st.success(
         f"Já existe um RDV enviado para este colaborador neste período: {protocol(existing.id)}."
     )
+    status_label = {
+        SubmissionStatus.ENVIADO: "Aguardando análise",
+        SubmissionStatus.AGUARDANDO_GESTOR: "Aguardando aprovação do gestor",
+        SubmissionStatus.APROVADO: "Aprovado",
+    }[existing.status]
     st.caption(
-        f"Status atual: {existing.status.value}. Em caso de dúvida, fale com o responsável pela frota."
+        f"Status atual: {status_label}. Em caso de dúvida, fale com o responsável pela frota."
     )
     st.stop()
 

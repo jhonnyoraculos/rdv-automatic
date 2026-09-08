@@ -33,6 +33,7 @@ class EmployeeRole(str, Enum):
 
 class SubmissionStatus(str, Enum):
     ENVIADO = "ENVIADO"
+    AGUARDANDO_GESTOR = "AGUARDANDO_GESTOR"
     APROVADO = "APROVADO"
     REJEITADO = "REJEITADO"
 
@@ -123,6 +124,12 @@ class RdvSubmission(Base):
     location: Mapped[str] = mapped_column(String(80), nullable=False, default="")
     signed_date: Mapped[date | None] = mapped_column(Date)
     signature_data: Mapped[bytes | None] = mapped_column(LargeBinary)
+    analyst_signature_data: Mapped[bytes | None] = mapped_column(LargeBinary)
+    analyst_signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    analyst_username: Mapped[str | None] = mapped_column(String(100))
+    manager_signature_data: Mapped[bytes | None] = mapped_column(LargeBinary)
+    manager_signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    manager_username: Mapped[str | None] = mapped_column(String(100))
     status: Mapped[SubmissionStatus] = mapped_column(
         enum_type(SubmissionStatus, "submission_status"), nullable=False
     )

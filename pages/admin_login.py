@@ -2,14 +2,25 @@ from __future__ import annotations
 
 import streamlit as st
 
-from auth import auth_configured, is_authenticated, login, logout
+from auth import (
+    AdminRole,
+    auth_configured,
+    current_admin_role,
+    is_authenticated,
+    login,
+    logout,
+)
 from ui import company_header
 
 company_header("Área administrativa", "Acesso restrito à gestão de frota")
 
 if is_authenticated():
+    role = current_admin_role()
+    role_label = (
+        "Analista de frota" if role == AdminRole.ANALISTA else "Gestor de frota"
+    )
     st.success(
-        f"Sessão ativa como {st.session_state.get('admin_username', 'administrador')}."
+        f"Sessão ativa como {st.session_state.get('admin_username', 'administrador')} — {role_label}."
     )
     enter_col, logout_col = st.columns(2)
     if enter_col.button("Abrir Painel RDV", type="primary", use_container_width=True):
@@ -25,7 +36,7 @@ if not auth_configured():
         "python -c \"import bcrypt; print(bcrypt.hashpw(b'SUA_SENHA', bcrypt.gensalt()).decode())\""
     )
     st.caption(
-        "Copie o resultado para ADMIN_PASSWORD_HASH no arquivo .env e defina também ADMIN_USERNAME."
+        "Configure ANALYST_PASSWORD_HASH e MANAGER_PASSWORD_HASH nos segredos do aplicativo."
     )
     st.stop()
 
@@ -37,7 +48,7 @@ with st.form("admin_login_form"):
     )
 if submitted:
     if login(username, password):
-        st.success("Acesso autorizado.")
+        st.success("Acesso autorizado. Perfil identificado automaticamente.")
         st.rerun()
     else:
         st.error("Usuário ou senha inválidos.")
