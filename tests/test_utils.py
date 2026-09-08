@@ -10,6 +10,10 @@ def test_brazilian_money_format() -> None:
     assert format_brl(Decimal("1250.5")) == "R$ 1.250,50"
 
 
+def test_brazilian_money_format_accepts_calculated_negative_balance() -> None:
+    assert format_brl(Decimal("-130.25")) == "R$ -130,25"
+
+
 def test_money_rejects_negative() -> None:
     with pytest.raises(ValueError):
         money("-0.01")

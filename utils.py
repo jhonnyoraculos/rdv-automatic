@@ -36,7 +36,15 @@ def money(value: Any, field: str = "Valor") -> Decimal:
 
 
 def format_brl(value: Any) -> str:
-    amount = money(value)
+    # Formatting must support legitimate calculated negatives (for example,
+    # when the advance is greater than the expenses). Input validation remains
+    # strict in money().
+    try:
+        amount = Decimal(str(value or 0)).quantize(
+            MONEY_QUANT, rounding=ROUND_HALF_UP
+        )
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise ValueError("Valor inválido para formatação.") from exc
     formatted = f"{amount:,.2f}"
     return "R$ " + formatted.translate(str.maketrans({",": ".", ".": ","}))
 
