@@ -83,6 +83,6 @@ def submission_status_label(status: object) -> str:
     return {
         "ENVIADO": "AGUARDANDO ANALISTA",
         "AGUARDANDO_GESTOR": "AGUARDANDO GESTOR",
-        "APROVADO": "APROVADO",
+        "APROVADO": "CONCLUÍDO",
         "REJEITADO": "REJEITADO",
     }.get(value, value)

@@ -86,7 +86,7 @@ stats = dashboard_stats(period_filter)
 metric_cols = st.columns(5)
 metric_cols[0].metric("Aguardando analista", stats["counts"]["ENVIADO"])
 metric_cols[1].metric("Aguardando gestor", stats["counts"]["AGUARDANDO_GESTOR"])
-metric_cols[2].metric("Aprovados", stats["counts"]["APROVADO"])
+metric_cols[2].metric("Concluídos", stats["counts"]["APROVADO"])
 metric_cols[3].metric("Rejeitados", stats["counts"]["REJEITADO"])
 metric_cols[4].metric("Total da quinzena", format_brl(stats["expense_total"]))
 assigned_status = (
@@ -112,7 +112,7 @@ with st.expander("Filtros", expanded=False):
     status_filter = filter_cols[2].selectbox(
         "Status",
         status_options,
-        index=status_options.index(assigned_status),
+        index=0,
         format_func=lambda x: "Todos" if x is None else submission_status_label(x),
         key=f"dashboard_status_{admin_role.value}",
     )
@@ -154,7 +154,7 @@ if not rdv_table.empty:
     status_colors = {
         "AGUARDANDO ANALISTA": "background-color: #fff1cc; color: #8a5b00; font-weight: 700",
         "AGUARDANDO GESTOR": "background-color: #dcecff; color: #154f8b; font-weight: 700",
-        "APROVADO": "background-color: #dff6e8; color: #116b39; font-weight: 700",
+        "CONCLUÍDO": "background-color: #dff6e8; color: #116b39; font-weight: 700",
         "REJEITADO": "background-color: #fde2e5; color: #a11427; font-weight: 700",
     }
     display_table = rdv_table.style.map(
@@ -293,7 +293,9 @@ if can_review:
             if approved.status == SubmissionStatus.AGUARDANDO_GESTOR:
                 st.success("RDV assinado pelo analista e enviado ao gestor.")
             else:
-                st.success("RDV assinado e aprovado definitivamente pelo gestor.")
+                st.session_state[f"dashboard_status_{admin_role.value}"] = None
+                st.session_state["opened_rdv_id"] = rdv.id
+                st.success("RDV assinado pelo gestor e concluído.")
             st.rerun()
         except BusinessError as exc:
             st.error(str(exc))

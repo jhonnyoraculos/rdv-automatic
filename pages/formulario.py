@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 
+from exports import rdv_to_pdf
 from models import BenefitType, EmployeeRole, SubmissionStatus
 from services import (
     BusinessError,
@@ -64,16 +65,33 @@ if employee_id is None:
 employee = employee_by_id[employee_id]
 base_context = f"{employee.id}_{period.id}"
 existing = get_submission_for_employee_period(employee.id, period.id)
-if st.session_state.get("rdv_success_context") == base_context and st.session_state.get(
-    "rdv_success"
+if (
+    st.session_state.get("rdv_success_context") == base_context
+    and st.session_state.get("rdv_success")
+    and (not existing or existing.status != SubmissionStatus.APROVADO)
 ):
     st.success(f"RDV enviado com sucesso! Protocolo: {st.session_state['rdv_success']}")
     st.balloons()
     st.stop()
+if existing and existing.status == SubmissionStatus.APROVADO:
+    st.success(
+        f"RDV concluído! Protocolo: {protocol(existing.id)}. Todas as aprovações foram realizadas."
+    )
+    final_pdf = rdv_to_pdf(existing)
+    st.subheader("Folha final do RDV")
+    st.pdf(final_pdf, height=800, key=f"public_final_pdf_{existing.id}")
+    st.download_button(
+        "BAIXAR FOLHA CONCLUÍDA",
+        final_pdf,
+        f"rdv_concluido_{existing.id:06d}.pdf",
+        "application/pdf",
+        type="primary",
+        use_container_width=True,
+    )
+    st.stop()
 if existing and existing.status in (
     SubmissionStatus.ENVIADO,
     SubmissionStatus.AGUARDANDO_GESTOR,
-    SubmissionStatus.APROVADO,
 ):
     st.success(
         f"Já existe um RDV enviado para este colaborador neste período: {protocol(existing.id)}."
@@ -81,7 +99,6 @@ if existing and existing.status in (
     status_label = {
         SubmissionStatus.ENVIADO: "Aguardando análise",
         SubmissionStatus.AGUARDANDO_GESTOR: "Aguardando aprovação do gestor",
-        SubmissionStatus.APROVADO: "Aprovado",
     }[existing.status]
     st.caption(
         f"Status atual: {status_label}. Em caso de dúvida, fale com o responsável pela frota."
