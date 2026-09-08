@@ -7,7 +7,13 @@ from sqlalchemy.orm import sessionmaker
 
 import database
 from database import Base
-from exports import rdv_to_csv, rdv_to_pdf, rdv_to_png, rdv_to_xlsx
+from exports import (
+    _prepare_signature_for_export,
+    rdv_to_csv,
+    rdv_to_pdf,
+    rdv_to_png,
+    rdv_to_xlsx,
+)
 from models import BenefitType, EmployeeRole, SubmissionStatus
 from services import (
     BusinessError,
@@ -95,6 +101,23 @@ def test_individual_exports_are_generated() -> None:
     assert rdv_to_png(rdv).startswith(b"\x89PNG")
     assert rdv_to_xlsx(rdv).startswith(b"PK")
     assert rdv_to_csv(rdv).startswith(b"\xef\xbb\xbf")
+
+
+def test_signature_is_solid_and_thickened_for_the_printed_sheet() -> None:
+    from io import BytesIO
+
+    from PIL import Image
+
+    original = _signature()
+    with Image.open(BytesIO(original)) as source:
+        original_ink = int((np.asarray(source.convert("RGBA"))[:, :, 3] > 0).sum())
+
+    prepared = _prepare_signature_for_export(original)
+    with Image.open(BytesIO(prepared)) as result:
+        pixels = np.asarray(result.convert("RGB"))
+
+    assert set(np.unique(pixels)).issubset({0, 255})
+    assert int((pixels[:, :, 0] == 0).sum()) > original_ink
 
 
 def test_duplicate_sent_rdv_is_rejected() -> None:

@@ -95,7 +95,7 @@ export default function({ parentElement, data, setStateValue }) {
     context.lineCap = 'round';
     context.lineJoin = 'round';
     context.strokeStyle = '#172033';
-    context.lineWidth = 3.5;
+    context.lineWidth = Math.max(4.5, Math.min(8, rect.height / 90));
     restoreImage(source);
   }
 

@@ -103,6 +103,24 @@ def _draw_logo(canvas: object, x: float, y: float) -> None:
     )
 
 
+def _prepare_signature_for_export(signature_data: bytes) -> bytes:
+    from PIL import Image, ImageFilter, ImageOps
+
+    with Image.open(BytesIO(signature_data)) as source:
+        source.thumbnail((900, 300), Image.Resampling.LANCZOS)
+        rgba = source.convert("RGBA")
+        white_background = Image.new("RGBA", rgba.size, "white")
+        flattened = Image.alpha_composite(white_background, rgba).convert("RGB")
+        grayscale = ImageOps.grayscale(flattened)
+        ink_mask = grayscale.point(lambda pixel: 255 if pixel < 245 else 0)
+        ink_mask = ink_mask.filter(ImageFilter.MaxFilter(5))
+        prepared = Image.new("RGB", rgba.size, "white")
+        prepared.paste(Image.new("RGB", rgba.size, "black"), mask=ink_mask)
+        prepared_stream = BytesIO()
+        prepared.save(prepared_stream, format="PNG", optimize=True)
+        return prepared_stream.getvalue()
+
+
 def _draw_signature(
     canvas: object,
     signature_data: bytes,
@@ -113,7 +131,7 @@ def _draw_signature(
 ) -> None:
     from reportlab.lib.utils import ImageReader
 
-    signature = ImageReader(BytesIO(signature_data))
+    signature = ImageReader(BytesIO(_prepare_signature_for_export(signature_data)))
     image_width, image_height = signature.getSize()
     scale = min(width / image_width, height / image_height)
     draw_width = image_width * scale
@@ -251,6 +269,7 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
         location_date,
     )
     signature_y = 60
+    signature_height = 36
     labels = ["ASSINATURA DO COLABORADOR", "ANALISTA DE FROTA", "GESTOR DE FROTA"]
     signatures = [
         getattr(rdv, "signature_data", None),
@@ -260,7 +279,7 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
     signature_width = (table_width - 30) / 3
     for index, label in enumerate(labels):
         start = margin + index * (signature_width + 15)
-        canvas.drawCentredString(start + signature_width / 2, signature_y + 30, label)
+        canvas.drawCentredString(start + signature_width / 2, signature_y + 48, label)
         canvas.line(start, signature_y, start + signature_width, signature_y)
         if signatures[index]:
             _draw_signature(
@@ -269,7 +288,7 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
                 start + 3,
                 signature_y + 2,
                 signature_width - 6,
-                25,
+                signature_height,
             )
     observation = (
         "OBSERVAÇÃO: NOS TERMOS DA CONVENÇÃO COLETIVA, A DIÁRIA DE VIAGEM É DESTINADA AO COLABORADOR QUE EXERCE "
