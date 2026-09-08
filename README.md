@@ -20,6 +20,7 @@ Aplicação Streamlit para envio, análise e exportação dos RDVs de motoristas
 ```text
 .
 ├── app.py
+├── assets/logo_jr.png
 ├── auth.py
 ├── database.py
 ├── exports.py

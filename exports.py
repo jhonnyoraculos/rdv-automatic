@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from collections.abc import Iterable
 from io import BytesIO, StringIO
+from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -87,13 +88,18 @@ def rdv_to_xlsx(rdv: RdvSubmission) -> bytes:
 
 
 def _draw_logo(canvas: object, x: float, y: float) -> None:
-    from reportlab.lib.colors import HexColor, white
+    from reportlab.lib.utils import ImageReader
 
-    canvas.setFillColor(HexColor("#C8102E"))
-    canvas.roundRect(x, y, 22, 22, 4, fill=1, stroke=0)
-    canvas.setFillColor(white)
-    canvas.setFont("Helvetica-Bold", 10)
-    canvas.drawCentredString(x + 11, y + 7, "JR")
+    logo_path = Path(__file__).resolve().parent / "assets" / "logo_jr.png"
+    canvas.drawImage(
+        ImageReader(logo_path),
+        x,
+        y,
+        width=22,
+        height=22,
+        preserveAspectRatio=True,
+        mask="auto",
+    )
 
 
 def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
@@ -106,8 +112,7 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
     page_width, page_height = landscape(A4)
     canvas = Canvas(buffer, pagesize=(page_width, page_height))
     margin = 25
-    top = page_height - 28
-    _draw_logo(canvas, margin, top - 14)
+    _draw_logo(canvas, margin, page_height - 42)
     role_title = (
         "MOTORISTA"
         if rdv.employee.role == EmployeeRole.MOTORISTA
@@ -116,20 +121,20 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
     title = f"RELATÓRIO DE DESPESAS DE VIAGEM - RDV - {role_title}"
     canvas.setFillColor(colors.black)
     canvas.setFont("Helvetica-Bold", 17)
-    canvas.drawCentredString(page_width / 2, top, title)
+    canvas.drawCentredString(page_width / 2, page_height - 42, title)
     canvas.setFont("Helvetica-Bold", 8.5)
-    canvas.drawString(margin, top - 16, f"NOME: {rdv.employee.name}")
+    canvas.drawString(margin, page_height - 57, f"NOME: {rdv.employee.name}")
     canvas.setFont("Helvetica", 8.5)
     period_text = f"DATA QUINZENA (INÍCIO E FINAL): {format_date(rdv.period.start_date)} a {format_date(rdv.period.end_date)}"
-    canvas.drawRightString(page_width - margin, top - 16, period_text)
+    canvas.drawString(page_width / 2, page_height - 57, period_text)
     canvas.drawString(
         margin,
-        top - 32,
+        page_height - 73,
         f"HOUVE ADIANTAMENTO DE DIÁRIA?  {'(X) NÃO' if not rdv.advance_received else '( ) NÃO'}  "
         f"{'(X) SIM' if rdv.advance_received else '( ) SIM'}        NO VALOR DE {format_brl(rdv.advance_amount)}",
     )
 
-    table_top = top - 40
+    table_top = page_height - 80
     table_bottom = 182
     table_width = page_width - 2 * margin
     is_helper = rdv.employee.role == EmployeeRole.AJUDANTE
@@ -150,10 +155,10 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
     for row in range(rows + 1):
         y = table_top - row * row_height
         canvas.line(margin, y, page_width - margin, y)
-    canvas.setFont("Helvetica-Bold", 8.5)
+    canvas.setFont("Helvetica-Bold", 9)
     for index, header in enumerate(headers):
         canvas.drawString(xs[index] + 3, table_top - row_height + 6, header)
-    canvas.setFont("Helvetica", 8)
+    canvas.setFont("Helvetica", 8.25)
     for row_index, entry in enumerate(rdv.entries, 1):
         y = table_top - (row_index + 1) * row_height + 6
         date_label = "DOMINGO" if entry.date.weekday() == 6 else format_date(entry.date)
@@ -175,7 +180,7 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
         for col_index, value in enumerate(values):
             max_width = xs[col_index + 1] - xs[col_index] - 6
             text = str(value)
-            while text and stringWidth(text, "Helvetica", 8) > max_width:
+            while text and stringWidth(text, "Helvetica", 8.25) > max_width:
                 text = text[:-1]
             if text != str(value):
                 text = text[:-3] + "..."
@@ -195,20 +200,20 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
         y - 23,
         "LOCAL/DATA: ____________________________________________, ____ de ____________ de ____________",
     )
-    signature_y = y - 68
+    signature_y = 60
     labels = ["ASSINATURA DO COLABORADOR", "ANALISTA DE FROTA", "GESTOR DE FROTA"]
     signature_width = (table_width - 30) / 3
     for index, label in enumerate(labels):
         start = margin + index * (signature_width + 15)
-        canvas.drawCentredString(start + signature_width / 2, signature_y + 23, label)
+        canvas.drawCentredString(start + signature_width / 2, signature_y + 30, label)
         canvas.line(start, signature_y, start + signature_width, signature_y)
     observation = (
         "OBSERVAÇÃO: NOS TERMOS DA CONVENÇÃO COLETIVA, A DIÁRIA DE VIAGEM É DESTINADA AO COLABORADOR QUE EXERCE "
         "ATIVIDADE FORA DA BASE. CONSIDERA-SE CADA PERÍODO MODULAR DE 24 HORAS. O RECEBIMENTO DA DIÁRIA EXCLUI O "
         "PAGAMENTO DA AJUDA DE ALIMENTAÇÃO (TICKET)."
     )
-    canvas.setFont("Helvetica", 6.5)
-    text = canvas.beginText(margin, 35)
+    canvas.setFont("Helvetica", 6.8)
+    text = canvas.beginText(margin, 27)
     max_chars = 190
     remaining = observation
     while remaining:

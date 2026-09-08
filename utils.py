@@ -40,9 +40,7 @@ def format_brl(value: Any) -> str:
     # when the advance is greater than the expenses). Input validation remains
     # strict in money().
     try:
-        amount = Decimal(str(value or 0)).quantize(
-            MONEY_QUANT, rounding=ROUND_HALF_UP
-        )
+        amount = Decimal(str(value or 0)).quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
     except (InvalidOperation, ValueError, TypeError) as exc:
         raise ValueError("Valor inválido para formatação.") from exc
     formatted = f"{amount:,.2f}"

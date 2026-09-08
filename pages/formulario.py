@@ -217,7 +217,9 @@ if advance_answer == "Sim":
         "Adiantamento recebido (informativo)",
         format_brl(totals["advance_total"]),
     )
-st.caption("O total da quinzena considera somente diárias e tickets. Hotéis e adiantamento não entram no cálculo.")
+st.caption(
+    "O total da quinzena considera somente diárias e tickets. Hotéis e adiantamento não entram no cálculo."
+)
 
 st.subheader("Revisão")
 review_rows = []

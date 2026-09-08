@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import base64
+from html import escape
+from pathlib import Path
+
 import streamlit as st
 
 from auth import is_authenticated
@@ -25,9 +29,7 @@ APP_CSS = """
         box-shadow:0 7px 26px rgba(20,58,102,.07);
     }
     .jr-logo {
-        width:48px; height:48px; border-radius:10px; display:flex; align-items:center;
-        justify-content:center; color:white; background:linear-gradient(145deg,#d31637,#a40b22);
-        font-weight:900; font-size:21px; letter-spacing:-2px;
+        width:48px; height:48px; border-radius:10px; object-fit:contain; flex:0 0 48px;
     }
     .jr-header h1 { margin:0; font-size:1.5rem; }
     .jr-header p { margin:3px 0 0; color:#667085; }
@@ -50,8 +52,11 @@ def apply_style() -> None:
 
 
 def company_header(title: str, subtitle: str = "JR Ferragens & Madeiras") -> None:
+    logo_path = Path(__file__).resolve().parent / "assets" / "logo_jr.png"
+    logo_data = base64.b64encode(logo_path.read_bytes()).decode("ascii")
     st.markdown(
-        f'<div class="jr-header"><div class="jr-logo">JR</div><div><h1>{title}</h1><p>{subtitle}</p></div></div>',
+        f'<div class="jr-header"><img class="jr-logo" src="data:image/png;base64,{logo_data}" '
+        f'alt="Logo JR"><div><h1>{escape(title)}</h1><p>{escape(subtitle)}</p></div></div>',
         unsafe_allow_html=True,
     )
 
