@@ -14,6 +14,7 @@ from utils import (
     calculate_rdv_totals,
     format_brl,
     format_date,
+    format_long_date,
     protocol,
 )
 
@@ -102,6 +103,32 @@ def _draw_logo(canvas: object, x: float, y: float) -> None:
     )
 
 
+def _draw_signature(
+    canvas: object,
+    signature_data: bytes,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+) -> None:
+    from reportlab.lib.utils import ImageReader
+
+    signature = ImageReader(BytesIO(signature_data))
+    image_width, image_height = signature.getSize()
+    scale = min(width / image_width, height / image_height)
+    draw_width = image_width * scale
+    draw_height = image_height * scale
+    canvas.drawImage(
+        signature,
+        x + (width - draw_width) / 2,
+        y,
+        width=draw_width,
+        height=draw_height,
+        preserveAspectRatio=True,
+        mask="auto",
+    )
+
+
 def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
@@ -139,9 +166,7 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
     table_width = page_width - 2 * margin
     is_helper = rdv.employee.role == EmployeeRole.AJUDANTE
     fractions = (
-        [0.13, 0.22, 0.22, 0.13, 0.15, 0.15]
-        if is_helper
-        else [0.16, 0.32, 0.26, 0.26]
+        [0.13, 0.22, 0.22, 0.13, 0.15, 0.15] if is_helper else [0.16, 0.32, 0.26, 0.26]
     )
     headers = (
         [
@@ -213,10 +238,17 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
         f"TOTAL DA QUINZENA EM R$ -----> {format_brl(totals['expense_total'])}",
     )
     canvas.setFont("Helvetica", 8.5)
+    location = getattr(rdv, "location", "") or ""
+    signed_date = getattr(rdv, "signed_date", None)
+    location_date = (
+        f"LOCAL/DATA: {location}, {format_long_date(signed_date)}"
+        if location and signed_date
+        else "LOCAL/DATA: ____________________________________________, ____ de ____________ de ____________"
+    )
     canvas.drawString(
         margin,
         y - 23,
-        "LOCAL/DATA: ____________________________________________, ____ de ____________ de ____________",
+        location_date,
     )
     signature_y = 60
     labels = ["ASSINATURA DO COLABORADOR", "ANALISTA DE FROTA", "GESTOR DE FROTA"]
@@ -225,6 +257,15 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
         start = margin + index * (signature_width + 15)
         canvas.drawCentredString(start + signature_width / 2, signature_y + 30, label)
         canvas.line(start, signature_y, start + signature_width, signature_y)
+        if index == 0 and getattr(rdv, "signature_data", None):
+            _draw_signature(
+                canvas,
+                rdv.signature_data,
+                start + 3,
+                signature_y + 2,
+                signature_width - 6,
+                25,
+            )
     observation = (
         "OBSERVAÇÃO: NOS TERMOS DA CONVENÇÃO COLETIVA, A DIÁRIA DE VIAGEM É DESTINADA AO COLABORADOR QUE EXERCE "
         "ATIVIDADE FORA DA BASE. CONSIDERA-SE CADA PERÍODO MODULAR DE 24 HORAS. O RECEBIMENTO DA DIÁRIA EXCLUI O "

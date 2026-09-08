@@ -154,11 +154,13 @@ with details_left:
         f"**Período:** {format_date(rdv.period.start_date)} a {format_date(rdv.period.end_date)}"
     )
     st.write(f"**Data do envio:** {format_datetime(rdv.submitted_at)}")
+    st.write(f"**Local informado:** {rdv.location or '—'}")
 with details_right:
     st.write(
         f"**Adiantamento:** {'Sim' if rdv.advance_received else 'Não'} — {format_brl(rdv.advance_amount)}"
     )
     st.write(f"**Revisado em:** {format_datetime(rdv.reviewed_at)}")
+    st.write(f"**Data da assinatura:** {format_date(rdv.signed_date)}")
     if rdv.admin_comment:
         st.write(f"**Motivo da rejeição:** {rdv.admin_comment}")
 

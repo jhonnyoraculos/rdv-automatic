@@ -1,9 +1,18 @@
 from datetime import date
 from decimal import Decimal
 
+import numpy as np
 import pytest
 
-from utils import calculate_rdv_totals, date_range, format_brl, money
+from utils import (
+    calculate_rdv_totals,
+    date_range,
+    format_brl,
+    format_long_date,
+    money,
+    signature_from_canvas,
+    validate_signature_png,
+)
 
 
 def test_brazilian_money_format() -> None:
@@ -25,6 +34,19 @@ def test_date_range_is_inclusive() -> None:
         date(2026, 9, 3),
         date(2026, 9, 4),
     ]
+
+
+def test_long_date_in_portuguese() -> None:
+    assert format_long_date(date(2026, 9, 8)) == "08 de setembro de 2026"
+
+
+def test_canvas_requires_real_strokes_and_creates_valid_png() -> None:
+    blank = np.full((80, 240, 4), 255, dtype=np.uint8)
+    assert signature_from_canvas(blank) is None
+    blank[20:25, 20:220, :3] = 0
+    signature = signature_from_canvas(blank)
+    assert signature is not None
+    assert validate_signature_png(signature).startswith(b"\x89PNG")
 
 
 def test_central_totals() -> None:

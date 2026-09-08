@@ -5,6 +5,7 @@ from html import escape
 
 import pandas as pd
 import streamlit as st
+from streamlit_drawable_canvas import st_canvas
 
 from models import BenefitType, EmployeeRole, SubmissionStatus
 from services import (
@@ -22,7 +23,9 @@ from utils import (
     format_brl,
     format_date,
     money,
+    now_sp,
     protocol,
+    signature_from_canvas,
 )
 
 company_header(
@@ -98,6 +101,10 @@ if st.session_state.get("rdv_context") != context:
     )
     st.session_state[f"advance_value_{context}"] = (
         float(existing.advance_amount) if existing else 0.0
+    )
+    st.session_state[f"location_{context}"] = existing.location if existing else ""
+    st.session_state[f"signed_date_{context}"] = (
+        existing.signed_date if existing and existing.signed_date else now_sp().date()
     )
     for day in date_range(period.start_date, period.end_date):
         saved = saved_entries.get(day)
@@ -239,6 +246,47 @@ if employee.role == EmployeeRole.MOTORISTA:
     review_df = review_df.drop(columns=["Hotel", "Valor hotel"])
 st.dataframe(review_df, use_container_width=True, hide_index=True)
 
+st.subheader("Local, data e assinatura")
+location_col, date_col = st.columns([2, 1])
+with location_col:
+    location = st.text_input(
+        "Local (cidade/UF)",
+        max_chars=80,
+        placeholder="Ex.: Divinópolis/MG",
+        key=f"location_{context}",
+    )
+with date_col:
+    signed_date = st.date_input(
+        "Data",
+        format="DD/MM/YYYY",
+        key=f"signed_date_{context}",
+    )
+
+st.write("Assinatura do colaborador")
+st.caption("Assine no quadro abaixo usando o mouse ou o dedo.")
+canvas_result = st_canvas(
+    stroke_width=3,
+    stroke_color="#172033",
+    background_color="#FFFFFF",
+    update_streamlit=True,
+    height=180,
+    width=700,
+    drawing_mode="freedraw",
+    return_image_data=True,
+    key=f"signature_{context}",
+)
+signature_state_key = f"signature_png_{context}"
+current_signature = signature_from_canvas(canvas_result.image_data)
+if current_signature:
+    st.session_state[signature_state_key] = current_signature
+elif canvas_result.image_data is not None:
+    st.session_state.pop(signature_state_key, None)
+signature_png = st.session_state.get(signature_state_key)
+if signature_png:
+    st.success("Assinatura registrada.")
+else:
+    st.caption("A assinatura desenhada é obrigatória para enviar o RDV.")
+
 confirmed = st.checkbox(
     "Confirmo que revisei as informações e que os valores informados estão corretos.",
     key=f"reviewed_{context}",
@@ -246,7 +294,7 @@ confirmed = st.checkbox(
 if st.button(
     "CONFIRMAR E ENVIAR RDV",
     type="primary",
-    disabled=not confirmed,
+    disabled=not confirmed or not location.strip() or signature_png is None,
     use_container_width=True,
 ):
     st.session_state["rdv_confirm"] = True
@@ -266,6 +314,9 @@ if st.session_state.get("rdv_confirm"):
                 advance_answer == "Sim",
                 advance_value,
                 entries,
+                location,
+                signed_date,
+                signature_png,
             )
             st.session_state["rdv_success"] = protocol(saved.id)
             st.session_state["rdv_success_context"] = base_context

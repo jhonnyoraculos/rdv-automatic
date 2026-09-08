@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -119,6 +120,9 @@ class RdvSubmission(Base):
     advance_amount: Mapped[Decimal] = mapped_column(
         Numeric(14, 2), nullable=False, default=Decimal("0.00")
     )
+    location: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    signed_date: Mapped[date | None] = mapped_column(Date)
+    signature_data: Mapped[bytes | None] = mapped_column(LargeBinary)
     status: Mapped[SubmissionStatus] = mapped_column(
         enum_type(SubmissionStatus, "submission_status"), nullable=False
     )

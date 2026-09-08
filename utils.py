@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from io import BytesIO
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -16,6 +17,20 @@ WEEKDAYS_PT = (
     "Sexta-feira",
     "Sábado",
     "Domingo",
+)
+MONTHS_PT = (
+    "janeiro",
+    "fevereiro",
+    "março",
+    "abril",
+    "maio",
+    "junho",
+    "julho",
+    "agosto",
+    "setembro",
+    "outubro",
+    "novembro",
+    "dezembro",
 )
 
 
@@ -49,6 +64,68 @@ def format_brl(value: Any) -> str:
 
 def format_date(value: date | None) -> str:
     return value.strftime("%d/%m/%Y") if value else "—"
+
+
+def format_long_date(value: date | None) -> str:
+    if not value:
+        return ""
+    return f"{value.day:02d} de {MONTHS_PT[value.month - 1]} de {value.year}"
+
+
+def signature_from_canvas(image_data: Any) -> bytes | None:
+    """Crop real ink from the drawing canvas and return a transparent PNG."""
+    if image_data is None:
+        return None
+
+    import numpy as np
+    from PIL import Image
+
+    pixels = np.asarray(image_data)
+    if pixels.ndim != 3 or pixels.shape[2] not in (3, 4):
+        return None
+    pixels = np.clip(pixels, 0, 255).astype(np.uint8)
+    rgb = pixels[:, :, :3]
+    alpha = pixels[:, :, 3] if pixels.shape[2] == 4 else np.full(rgb.shape[:2], 255)
+    grayscale = rgb.mean(axis=2)
+    ink = (grayscale < 235) & (alpha > 10)
+    if int(ink.sum()) < 40:
+        return None
+
+    ys, xs = np.where(ink)
+    padding = 8
+    x1 = max(int(xs.min()) - padding, 0)
+    x2 = min(int(xs.max()) + padding + 1, pixels.shape[1])
+    y1 = max(int(ys.min()) - padding, 0)
+    y2 = min(int(ys.max()) + padding + 1, pixels.shape[0])
+    cropped_gray = grayscale[y1:y2, x1:x2]
+    cropped_alpha = alpha[y1:y2, x1:x2]
+    output_alpha = np.minimum(255 - cropped_gray, cropped_alpha).astype(np.uint8)
+    output = np.zeros((*output_alpha.shape, 4), dtype=np.uint8)
+    output[:, :, 3] = output_alpha
+    stream = BytesIO()
+    Image.fromarray(output, "RGBA").save(stream, format="PNG", optimize=True)
+    return stream.getvalue()
+
+
+def validate_signature_png(value: Any) -> bytes:
+    if not isinstance(value, bytes) or not 100 <= len(value) <= 1_000_000:
+        raise ValueError("Faça sua assinatura no campo indicado.")
+
+    import numpy as np
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        with Image.open(BytesIO(value)) as image:
+            if image.format != "PNG":
+                raise ValueError("A assinatura deve estar no formato PNG.")
+            if image.width > 2000 or image.height > 1000:
+                raise ValueError("A imagem da assinatura é muito grande.")
+            pixels = np.asarray(image.convert("RGBA"))
+    except (Image.DecompressionBombError, UnidentifiedImageError, OSError) as exc:
+        raise ValueError("A assinatura desenhada é inválida.") from exc
+    if signature_from_canvas(pixels) is None:
+        raise ValueError("Faça sua assinatura no campo indicado.")
+    return value
 
 
 def format_datetime(value: datetime | None) -> str:

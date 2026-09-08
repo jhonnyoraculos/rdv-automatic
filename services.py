@@ -20,7 +20,14 @@ from models import (
     RdvSubmission,
     SubmissionStatus,
 )
-from utils import calculate_rdv_totals, clean_text, date_range, money, now_sp
+from utils import (
+    calculate_rdv_totals,
+    clean_text,
+    date_range,
+    money,
+    now_sp,
+    validate_signature_png,
+)
 
 logger = logging.getLogger("rdv")
 
@@ -279,8 +286,21 @@ def create_rdv(
     advance_received: bool,
     advance_amount: Any,
     entries: Iterable[dict[str, Any]],
+    location: str,
+    signed_date: date,
+    signature_data: bytes,
 ) -> RdvSubmission:
     try:
+        try:
+            normalized_location = clean_text(
+                location, "Local", 80, required=True
+            ).upper()
+            normalized_signature = validate_signature_png(signature_data)
+        except ValueError as exc:
+            raise BusinessError(str(exc)) from exc
+        if not isinstance(signed_date, date):
+            raise BusinessError("Informe a data da assinatura.")
+
         with session_scope() as session:
             employee = session.get(Employee, employee_id)
             period = session.get(RdvPeriod, period_id)
@@ -312,6 +332,9 @@ def create_rdv(
                 session.flush()
                 submission.advance_received = bool(advance_received)
                 submission.advance_amount = advance
+                submission.location = normalized_location
+                submission.signed_date = signed_date
+                submission.signature_data = normalized_signature
                 submission.status = SubmissionStatus.ENVIADO
                 submission.submitted_at = timestamp
                 submission.reviewed_at = None
@@ -323,6 +346,9 @@ def create_rdv(
                     period_id=period_id,
                     advance_received=bool(advance_received),
                     advance_amount=advance,
+                    location=normalized_location,
+                    signed_date=signed_date,
+                    signature_data=normalized_signature,
                     status=SubmissionStatus.ENVIADO,
                     submitted_at=timestamp,
                     created_at=timestamp,
