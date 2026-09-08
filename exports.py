@@ -138,11 +138,22 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
     table_bottom = 182
     table_width = page_width - 2 * margin
     is_helper = rdv.employee.role == EmployeeRole.AJUDANTE
-    fractions = [0.13, 0.24, 0.24, 0.15, 0.24] if is_helper else [0.16, 0.32, 0.52]
-    headers = (
-        ["DATA", "CIDADE", "HOTEL", "VALOR HOTEL", "DIÁRIA / TICKET"]
+    fractions = (
+        [0.13, 0.22, 0.22, 0.13, 0.15, 0.15]
         if is_helper
-        else ["DATA", "CIDADE", "DIÁRIA EM VIAGEM / TICKET ALIMENTAÇÃO"]
+        else [0.16, 0.32, 0.26, 0.26]
+    )
+    headers = (
+        [
+            "DATA",
+            "CIDADE",
+            "HOTEL",
+            "VALOR HOTEL",
+            "DIÁRIA EM VIAGEM",
+            "TICKET ALIMENTAÇÃO",
+        ]
+        if is_helper
+        else ["DATA", "CIDADE", "DIÁRIA EM VIAGEM", "TICKET ALIMENTAÇÃO"]
     )
     xs = [margin]
     for fraction in fractions:
@@ -163,20 +174,27 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
         y = table_top - (row_index + 1) * row_height + 6
         date_label = "DOMINGO" if entry.date.weekday() == 6 else format_date(entry.date)
         values: list[str]
-        benefit = ""
-        if entry.benefit_type != BenefitType.NONE:
-            label = "DIÁRIA" if entry.benefit_type == BenefitType.DIARIA else "TICKET"
-            benefit = f"{label}: {format_brl(entry.benefit_amount)}"
+        daily_amount = (
+            format_brl(entry.benefit_amount)
+            if entry.benefit_type == BenefitType.DIARIA
+            else ""
+        )
+        ticket_amount = (
+            format_brl(entry.benefit_amount)
+            if entry.benefit_type == BenefitType.TICKET
+            else ""
+        )
         if is_helper:
             values = [
                 date_label,
                 entry.city,
                 entry.hotel_name,
                 format_brl(entry.hotel_amount) if entry.hotel_amount else "",
-                benefit,
+                daily_amount,
+                ticket_amount,
             ]
         else:
-            values = [date_label, entry.city, benefit]
+            values = [date_label, entry.city, daily_amount, ticket_amount]
         for col_index, value in enumerate(values):
             max_width = xs[col_index + 1] - xs[col_index] - 6
             text = str(value)
