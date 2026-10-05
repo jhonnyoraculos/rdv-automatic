@@ -4,7 +4,7 @@ import logging
 
 import streamlit as st
 
-from auth import is_authenticated
+from auth import is_authenticated, is_employee_authenticated
 from database import init_db
 from ui import apply_style
 
@@ -23,16 +23,15 @@ init_db()
 apply_style()
 
 public_page = st.Page(
-    "pages/formulario.py", title="Enviar RDV", icon="🧾", default=True, url_path="rdv"
+    "pages/formulario.py", title="Enviar RDV", icon="🧾", url_path="rdv"
 )
 login_page = st.Page(
-    "pages/admin_login.py", title="Área administrativa", icon="🔐", url_path="admin"
+    "pages/admin_login.py", title="Acessar", icon="🔐", url_path="acesso"
 )
 
 if is_authenticated():
     navigation = st.navigation(
         {
-            "Colaborador": [public_page],
             "Administração": [
                 st.Page(
                     "pages/admin_dashboard.py",
@@ -57,6 +56,9 @@ if is_authenticated():
         }
     )
 else:
-    navigation = st.navigation({"Acesso": [public_page, login_page]})
+    if is_employee_authenticated():
+        navigation = st.navigation({"Colaborador": [public_page, login_page]})
+    else:
+        navigation = st.navigation([login_page])
 
 navigation.run()

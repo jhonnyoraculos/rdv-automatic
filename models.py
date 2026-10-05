@@ -11,7 +11,6 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
-    LargeBinary,
     Numeric,
     String,
     Text,
@@ -59,6 +58,10 @@ class Employee(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
+    username: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, unique=True, index=True
+    )
+    password_hash: Mapped[str | None] = mapped_column(String(200), nullable=True)
     role: Mapped[EmployeeRole] = mapped_column(enum_type(EmployeeRole, "employee_role"))
     active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, index=True
@@ -93,6 +96,7 @@ class RdvPeriod(Base):
     active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, index=True
     )
+    automatic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -122,12 +126,8 @@ class RdvSubmission(Base):
         Numeric(14, 2), nullable=False, default=Decimal("0.00")
     )
     location: Mapped[str] = mapped_column(String(80), nullable=False, default="")
-    signed_date: Mapped[date | None] = mapped_column(Date)
-    signature_data: Mapped[bytes | None] = mapped_column(LargeBinary)
-    analyst_signature_data: Mapped[bytes | None] = mapped_column(LargeBinary)
     analyst_signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     analyst_username: Mapped[str | None] = mapped_column(String(100))
-    manager_signature_data: Mapped[bytes | None] = mapped_column(LargeBinary)
     manager_signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     manager_username: Mapped[str | None] = mapped_column(String(100))
     status: Mapped[SubmissionStatus] = mapped_column(

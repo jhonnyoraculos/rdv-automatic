@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import logging
+import re
+import secrets
+import unicodedata
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 from threading import Lock
@@ -11,6 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
 
+from auth import generate_password_hash
 from database import session_scope
 from models import (
     BenefitType,
@@ -27,15 +32,24 @@ from utils import (
     date_range,
     money,
     now_sp,
-    validate_signature_png,
 )
 
 logger = logging.getLogger("rdv")
 _period_rollover_lock = Lock()
+AUTOMATIC_PERIOD_FIRST_START = date(2026, 9, 28)
+AUTOMATIC_PERIOD_DAYS = 13
+AUTOMATIC_PERIOD_CYCLE_DAYS = 14
 
 
 class BusinessError(ValueError):
     """Safe validation error that can be displayed in the interface."""
+
+
+@dataclass(frozen=True)
+class EmployeeAccess:
+    employee: Employee
+    username: str
+    temporary_password: str
 
 
 def _role(value: EmployeeRole | str) -> EmployeeRole:
@@ -52,19 +66,47 @@ def _benefit(value: BenefitType | str) -> BenefitType:
         raise BusinessError("Tipo de benefício inválido.") from exc
 
 
-def create_employee(
+def _username_base(name: str) -> str:
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    parts = re.findall(r"[a-z0-9]+", ascii_name.lower())
+    return ".".join(parts)[:90] if parts else "colaborador"
+
+
+def _available_username(session: Any, name: str) -> str:
+    base = _username_base(name)
+    candidate = base
+    suffix = 2
+    while session.scalar(
+        select(Employee.id).where(func.lower(Employee.username) == candidate.lower())
+    ):
+        suffix_text = str(suffix)
+        candidate = f"{base[: 98 - len(suffix_text)]}.{suffix_text}"
+        suffix += 1
+    return candidate
+
+
+def _temporary_password(length: int = 12) -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+def create_employee_with_access(
     name: str, role: EmployeeRole | str, active: bool = True
-) -> Employee:
+) -> EmployeeAccess:
     normalized_name = clean_text(name, "Nome", 150, required=True).upper()
     timestamp = now_sp()
+    temporary_password = _temporary_password()
     with session_scope() as session:
         duplicate = session.scalar(
             select(Employee).where(func.lower(Employee.name) == normalized_name.lower())
         )
         if duplicate:
             raise BusinessError("Já existe um colaborador com esse nome.")
+        username = _available_username(session, normalized_name)
         employee = Employee(
             name=normalized_name,
+            username=username,
+            password_hash=generate_password_hash(temporary_password),
             role=_role(role),
             active=bool(active),
             created_at=timestamp,
@@ -73,7 +115,29 @@ def create_employee(
         session.add(employee)
         session.flush()
         logger.info("Colaborador criado: id=%s nome=%s", employee.id, employee.name)
-        return employee
+        return EmployeeAccess(employee, username, temporary_password)
+
+
+def create_employee(
+    name: str, role: EmployeeRole | str, active: bool = True
+) -> Employee:
+    """Create an employee when the caller does not need to display credentials."""
+    return create_employee_with_access(name, role, active).employee
+
+
+def reset_employee_password(employee_id: int) -> EmployeeAccess:
+    temporary_password = _temporary_password()
+    with session_scope() as session:
+        employee = session.get(Employee, employee_id)
+        if not employee:
+            raise BusinessError("Colaborador não encontrado.")
+        if not employee.username:
+            employee.username = _available_username(session, employee.name)
+        employee.password_hash = generate_password_hash(temporary_password)
+        employee.updated_at = now_sp()
+        session.flush()
+        logger.info("Senha temporária renovada: colaborador=%s", employee.id)
+        return EmployeeAccess(employee, employee.username, temporary_password)
 
 
 def update_employee(
@@ -152,6 +216,7 @@ def create_period(
             end_date=end_date,
             description=description,
             active=bool(active),
+            automatic=False,
             created_at=now_sp(),
         )
         session.add(period)
@@ -203,6 +268,31 @@ def get_periods() -> list[RdvPeriod]:
         )
 
 
+def _ensure_automatic_period(session: Any, start_date: date) -> RdvPeriod:
+    end_date = start_date + timedelta(days=AUTOMATIC_PERIOD_DAYS - 1)
+    period = session.scalar(
+        select(RdvPeriod).where(
+            RdvPeriod.start_date == start_date,
+            RdvPeriod.end_date == end_date,
+        )
+    )
+    if period:
+        period.automatic = True
+        return period
+    period = RdvPeriod(
+        start_date=start_date,
+        end_date=end_date,
+        description="Período gerado automaticamente",
+        active=False,
+        automatic=True,
+        created_at=now_sp(),
+    )
+    session.add(period)
+    session.flush()
+    logger.info("Período criado automaticamente: %s a %s", start_date, end_date)
+    return period
+
+
 def get_active_period(reference_date: date | None = None) -> RdvPeriod | None:
     today = reference_date or now_sp().date()
     with _period_rollover_lock, session_scope() as session:
@@ -211,46 +301,36 @@ def get_active_period(reference_date: date | None = None) -> RdvPeriod | None:
             .where(RdvPeriod.active.is_(True))
             .order_by(RdvPeriod.created_at.desc())
         )
-        if not active:
-            return None
+        if today < AUTOMATIC_PERIOD_FIRST_START:
+            _ensure_automatic_period(session, AUTOMATIC_PERIOD_FIRST_START)
+            return active
 
-        while True:
-            next_start = active.end_date + timedelta(days=2)
-            next_end = next_start + timedelta(days=12)
-            upcoming = session.scalar(
-                select(RdvPeriod).where(
-                    RdvPeriod.start_date == next_start,
-                    RdvPeriod.end_date == next_end,
-                )
+        period_index = (
+            today - AUTOMATIC_PERIOD_FIRST_START
+        ).days // AUTOMATIC_PERIOD_CYCLE_DAYS
+        current = None
+        # Keep the whole requested sequence visible and always schedule one ahead.
+        for index in range(period_index + 2):
+            start = AUTOMATIC_PERIOD_FIRST_START + timedelta(
+                days=index * AUTOMATIC_PERIOD_CYCLE_DAYS
             )
-            if not upcoming:
-                upcoming = RdvPeriod(
-                    start_date=next_start,
-                    end_date=next_end,
-                    description="Quinzena gerada automaticamente",
-                    active=False,
-                    created_at=now_sp(),
-                )
-                session.add(upcoming)
-                session.flush()
-                logger.info(
-                    "Próxima quinzena criada automaticamente: %s a %s",
-                    next_start,
-                    next_end,
-                )
-            if today < next_start:
-                return active
+            generated = _ensure_automatic_period(session, start)
+            if index == period_index:
+                current = generated
 
-            _deactivate_periods(session, except_id=upcoming.id)
+        if current is None:
+            return active
+        if not current.active:
+            _deactivate_periods(session, except_id=current.id)
             session.flush()
-            upcoming.active = True
+            current.active = True
             session.flush()
-            active = upcoming
             logger.info(
-                "Quinzena ativada automaticamente: id=%s início=%s",
-                active.id,
-                active.start_date,
+                "Período ativado automaticamente: id=%s início=%s",
+                current.id,
+                current.start_date,
             )
+        return current
 
 
 def get_period(period_id: int) -> RdvPeriod | None:
@@ -332,22 +412,14 @@ def create_rdv(
     advance_amount: Any,
     entries: Iterable[dict[str, Any]],
     location: str,
-    signed_date: date,
-    signature_data: bytes | None,
-    sign_in_person: bool = False,
 ) -> RdvSubmission:
     try:
         try:
             normalized_location = clean_text(
                 location, "Local", 80, required=True
             ).upper()
-            normalized_signature = (
-                None if sign_in_person else validate_signature_png(signature_data)
-            )
         except ValueError as exc:
             raise BusinessError(str(exc)) from exc
-        if not isinstance(signed_date, date):
-            raise BusinessError("Informe a data da assinatura.")
 
         with session_scope() as session:
             employee = session.get(Employee, employee_id)
@@ -381,12 +453,8 @@ def create_rdv(
                 submission.advance_received = bool(advance_received)
                 submission.advance_amount = advance
                 submission.location = normalized_location
-                submission.signed_date = signed_date
-                submission.signature_data = normalized_signature
-                submission.analyst_signature_data = None
                 submission.analyst_signed_at = None
                 submission.analyst_username = None
-                submission.manager_signature_data = None
                 submission.manager_signed_at = None
                 submission.manager_username = None
                 submission.status = SubmissionStatus.ENVIADO
@@ -401,8 +469,6 @@ def create_rdv(
                     advance_received=bool(advance_received),
                     advance_amount=advance,
                     location=normalized_location,
-                    signed_date=signed_date,
-                    signature_data=normalized_signature,
                     status=SubmissionStatus.ENVIADO,
                     submitted_at=timestamp,
                     created_at=timestamp,
@@ -509,7 +575,6 @@ def get_rdvs(
 def approve_rdv(
     submission_id: int,
     reviewer_role: str,
-    signature_data: bytes,
     reviewer_username: str,
 ) -> RdvSubmission:
     role = str(getattr(reviewer_role, "value", reviewer_role)).upper()
@@ -519,7 +584,6 @@ def approve_rdv(
         username = clean_text(
             reviewer_username, "Usuário responsável", 100, required=True
         )
-        signature = validate_signature_png(signature_data)
     except ValueError as exc:
         raise BusinessError(str(exc)) from exc
 
@@ -533,7 +597,6 @@ def approve_rdv(
                 raise BusinessError(
                     "Este RDV não está aguardando a aprovação do analista."
                 )
-            submission.analyst_signature_data = signature
             submission.analyst_signed_at = timestamp
             submission.analyst_username = username
             submission.status = SubmissionStatus.AGUARDANDO_GESTOR
@@ -542,7 +605,6 @@ def approve_rdv(
                 raise BusinessError(
                     "Este RDV não está aguardando a aprovação do gestor."
                 )
-            submission.manager_signature_data = signature
             submission.manager_signed_at = timestamp
             submission.manager_username = username
             submission.status = SubmissionStatus.APROVADO

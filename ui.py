@@ -6,7 +6,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from auth import is_authenticated
+from auth import is_authenticated, is_employee_authenticated
 
 APP_CSS = """
 <style>
@@ -34,12 +34,21 @@ APP_CSS = """
     .jr-header h1 { margin:0; font-size:1.5rem; }
     .jr-header p { margin:3px 0 0; color:#667085; }
     .info-strip { background:#eef3f9; border-left:4px solid var(--jr-blue); padding:12px 15px; border-radius:8px; }
+    .rdv-review-grid {
+        display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px;
+    }
+    .rdv-review-card {
+        display:grid; gap:4px; min-width:0; padding:12px 14px; background:white;
+        border:1px solid #e2e7ee; border-radius:12px; overflow-wrap:anywhere;
+    }
+    .rdv-review-card strong { color:var(--jr-blue); font-size:1rem; }
     .status { display:inline-block; padding:4px 9px; border-radius:99px; font-size:.78rem; font-weight:800; }
     .status-enviado { background:#fff1cc; color:#8a5b00; }
     .status-aguardando_gestor { background:#dcecff; color:#154f8b; }
     .status-aprovado { background:#dff6e8; color:#116b39; }
     .status-rejeitado { background:#fde2e5; color:#a11427; }
     @media (max-width: 640px) {
+        html, body, .stApp { overflow-x:hidden; }
         .block-container { padding: .8rem .75rem 2rem; }
         .jr-header { padding:12px; }
         .jr-header h1 { font-size:1.18rem; }
@@ -61,7 +70,9 @@ APP_CSS = """
         div[role="radiogroup"] label p,
         div[data-testid="stCheckbox"] label p { font-size:17px !important; }
         div[data-testid="stExpander"] summary p { font-size:17px !important; }
-        div[data-testid="stDataFrame"] { overflow-x:auto; }
+        .rdv-review-grid { grid-template-columns:1fr; }
+        div[data-testid="stMetric"] { width:100%; }
+        div[data-baseweb="select"], div[data-baseweb="input"] { max-width:100%; }
         iframe, img { max-width:100%; }
     }
 </style>
@@ -86,6 +97,14 @@ def require_admin() -> None:
     if not is_authenticated():
         st.error("Acesso restrito. Entre com uma conta administrativa.")
         if st.button("Ir para o login", type="primary"):
+            st.switch_page("pages/admin_login.py")
+        st.stop()
+
+
+def require_employee() -> None:
+    if not is_employee_authenticated():
+        st.error("Acesso restrito. Entre com a conta do colaborador.")
+        if st.button("Ir para o acesso", type="primary"):
             st.switch_page("pages/admin_login.py")
         st.stop()
 

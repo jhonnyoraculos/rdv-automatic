@@ -44,6 +44,7 @@ with edit_tab:
                     "Início": format_date(period.start_date),
                     "Fim": format_date(period.end_date),
                     "Descrição": period.description or "—",
+                    "Origem": "Automático" if period.automatic else "Manual",
                     "Status": (
                         "ATIVO"
                         if period.active
@@ -98,6 +99,6 @@ with edit_tab:
             except BusinessError as exc:
                 st.error(str(exc))
 st.info(
-    "A próxima quinzena é criada automaticamente com 13 dias e um dia de intervalo. "
-    "Exemplo: após 31/08 a 12/09, o sistema agenda 14/09 a 26/09 e a ativa na data inicial."
+    "A sequência automática começa em 28/09/2026 a 10/10/2026. Cada período tem "
+    "13 dias corridos e um dia de intervalo; o período seguinte é ativado na data inicial."
 )

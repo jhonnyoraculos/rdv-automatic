@@ -3,20 +3,19 @@ from __future__ import annotations
 import logging
 from html import escape
 
-import pandas as pd
 import streamlit as st
 
+from auth import current_employee_id, logout
 from exports import pdf_to_png, rdv_to_pdf
 from models import BenefitType, EmployeeRole, SubmissionStatus
 from services import (
     BusinessError,
     create_rdv,
-    get_active_employees,
     get_active_period,
+    get_employee,
     get_submission_for_employee_period,
 )
-from signature_component import signature_pad
-from ui import company_header
+from ui import company_header, require_employee
 from utils import (
     WEEKDAYS_PT,
     calculate_rdv_totals,
@@ -24,46 +23,30 @@ from utils import (
     format_brl,
     format_date,
     money,
-    now_sp,
     protocol,
 )
 
+require_employee()
 company_header(
     "Relatório de Despesas de Viagem — RDV",
     "Preenchimento digital para motoristas e ajudantes",
 )
 
 logger = logging.getLogger("rdv.ui")
-SIGNATURE_DIGITAL = "Assinar digitalmente agora"
-SIGNATURE_IN_PERSON = "Assinar pessoalmente na folha impressa"
 
 period = get_active_period()
-employees = get_active_employees()
+employee_id = current_employee_id()
+employee = get_employee(employee_id) if employee_id is not None else None
+if not employee or not employee.active:
+    logout()
+    st.error("Seu acesso não está mais ativo. Procure o responsável pela frota.")
+    st.stop()
 if not period:
     st.info(
         "Não há um período de RDV ativo no momento. Procure o responsável pela frota."
     )
     st.stop()
-if not employees:
-    st.info(
-        "Não há colaboradores ativos cadastrados. Procure o responsável pela frota."
-    )
-    st.stop()
 
-employee_by_id = {employee.id: employee for employee in employees}
-employee_id = st.selectbox(
-    "Selecione seu nome",
-    options=[None, *employee_by_id],
-    format_func=lambda value: (
-        "Pesquisar colaborador..." if value is None else employee_by_id[value].name
-    ),
-    key="public_employee_id",
-)
-if employee_id is None:
-    st.caption("Digite parte do nome no campo acima para pesquisar.")
-    st.stop()
-
-employee = employee_by_id[employee_id]
 base_context = f"{employee.id}_{period.id}"
 existing = get_submission_for_employee_period(employee.id, period.id)
 if (
@@ -141,15 +124,6 @@ if st.session_state.get("rdv_context") != context:
         float(existing.advance_amount) if existing else 0.0
     )
     st.session_state[f"location_{context}"] = existing.location if existing else ""
-    st.session_state[f"signed_date_{context}"] = (
-        existing.signed_date if existing and existing.signed_date else now_sp().date()
-    )
-    st.session_state[f"signature_mode_{context}"] = (
-        SIGNATURE_IN_PERSON
-        if existing and existing.signature_data is None
-        else SIGNATURE_DIGITAL
-    )
-    st.session_state[f"signature_pad_open_{context}"] = False
     for day in date_range(period.start_date, period.end_date):
         saved = saved_entries.get(day)
         suffix = f"{context}_{day:%Y_%m_%d}"
@@ -273,82 +247,35 @@ st.caption(
 )
 
 st.subheader("Revisão")
-review_rows = []
+review_cards = []
 for entry in entries:
-    review_rows.append(
-        {
-            "Data": format_date(entry["date"]),
-            "Cidade": entry["city"] or "—",
-            "Hotel": entry["hotel_name"] or "—",
-            "Valor hotel": format_brl(entry["hotel_amount"]),
-            "Tipo": benefit_labels[str(entry["benefit_type"])],
-            "Valor": format_brl(entry["benefit_amount"]),
-        }
+    hotel_text = ""
+    if employee.role == EmployeeRole.AJUDANTE:
+        hotel_text = (
+            f'<span><b>Hotel:</b> {escape(str(entry["hotel_name"] or "—"))}</span>'
+            f'<span><b>Valor hotel:</b> {escape(format_brl(entry["hotel_amount"]))}</span>'
+        )
+    review_cards.append(
+        '<div class="rdv-review-card">'
+        f'<strong>{escape(format_date(entry["date"]))}</strong>'
+        f'<span><b>Cidade:</b> {escape(str(entry["city"] or "—"))}</span>'
+        f'{hotel_text}'
+        f'<span><b>Despesa:</b> {escape(benefit_labels[str(entry["benefit_type"])])}</span>'
+        f'<span><b>Valor:</b> {escape(format_brl(entry["benefit_amount"]))}</span>'
+        '</div>'
     )
-review_df = pd.DataFrame(review_rows)
-if employee.role == EmployeeRole.MOTORISTA:
-    review_df = review_df.drop(columns=["Hotel", "Valor hotel"])
-st.dataframe(review_df, use_container_width=True, hide_index=True)
-
-st.subheader("Local, data e assinatura")
-location_col, date_col = st.columns([2, 1])
-with location_col:
-    location = st.text_input(
-        "Local (cidade/UF)",
-        max_chars=80,
-        placeholder="Ex.: Divinópolis/MG",
-        key=f"location_{context}",
-    )
-with date_col:
-    signed_date = st.date_input(
-        "Data",
-        format="DD/MM/YYYY",
-        key=f"signed_date_{context}",
-    )
-
-st.write("Assinatura do colaborador")
-signature_mode = st.radio(
-    "Como você deseja assinar?",
-    [SIGNATURE_DIGITAL, SIGNATURE_IN_PERSON],
-    key=f"signature_mode_{context}",
+st.markdown(
+    '<div class="rdv-review-grid">' + "".join(review_cards) + "</div>",
+    unsafe_allow_html=True,
 )
-sign_in_person = signature_mode == SIGNATURE_IN_PERSON
-signature_state_key = f"signature_png_{context}"
-signature_pad_key = f"signature_pad_open_{context}"
-if sign_in_person:
-    st.session_state.pop(signature_state_key, None)
-    st.info(
-        "O espaço da assinatura ficará livre na folha para você assinar pessoalmente depois de imprimir."
-    )
-else:
-    if not st.session_state.get(signature_pad_key):
-        st.info(
-            "No celular, toque no botão abaixo depois de preencher o local. O teclado será fechado e o quadro grande será aberto."
-        )
-        if st.button(
-            "ABRIR QUADRO GRANDE PARA ASSINAR",
-            type="primary",
-            use_container_width=True,
-            key=f"open_signature_{context}",
-        ):
-            st.session_state[signature_pad_key] = True
-            st.rerun()
-    else:
-        st.caption(
-            "Use Ampliar tela se quiser mais espaço. Ao terminar, toque em Concluir assinatura."
-        )
-        current_signature = signature_pad(key=f"signature_{context}")
-        if current_signature:
-            st.session_state[signature_state_key] = current_signature
-        else:
-            st.session_state.pop(signature_state_key, None)
-signature_png = st.session_state.get(signature_state_key)
-if sign_in_person:
-    st.success("Assinatura pessoal selecionada.")
-elif signature_png:
-    st.success("Assinatura registrada.")
-else:
-    st.caption("A assinatura desenhada é obrigatória para enviar o RDV.")
+
+st.subheader("Local do preenchimento")
+location = st.text_input(
+    "Cidade/UF",
+    max_chars=80,
+    placeholder="Ex.: Divinópolis/MG",
+    key=f"location_{context}",
+)
 
 confirmed = st.checkbox(
     "Confirmo que revisei as informações e que os valores informados estão corretos.",
@@ -357,11 +284,7 @@ confirmed = st.checkbox(
 if st.button(
     "CONFIRMAR E ENVIAR RDV",
     type="primary",
-    disabled=(
-        not confirmed
-        or not location.strip()
-        or (not sign_in_person and signature_png is None)
-    ),
+    disabled=(not confirmed or not location.strip()),
     use_container_width=True,
 ):
     st.session_state["rdv_confirm"] = True
@@ -382,9 +305,6 @@ if st.session_state.get("rdv_confirm"):
                 advance_value,
                 entries,
                 location,
-                signed_date,
-                signature_png,
-                sign_in_person=sign_in_person,
             )
             st.session_state["rdv_success"] = protocol(saved.id)
             st.session_state["rdv_success_context"] = base_context

@@ -4,7 +4,13 @@ import pandas as pd
 import streamlit as st
 
 from models import EmployeeRole
-from services import BusinessError, create_employee, get_employees, update_employee
+from services import (
+    BusinessError,
+    create_employee_with_access,
+    get_employees,
+    reset_employee_password,
+    update_employee,
+)
 from ui import company_header, require_admin
 
 require_admin()
@@ -21,9 +27,15 @@ with create_tab:
         submit = st.form_submit_button("Cadastrar colaborador", type="primary")
     if submit:
         try:
-            create_employee(name, role, active)
+            access = create_employee_with_access(name, role, active)
             st.success("Colaborador cadastrado com sucesso.")
-            st.rerun()
+            st.warning(
+                "Copie os dados abaixo agora. A senha não será mostrada novamente."
+            )
+            st.code(
+                f"Usuário: {access.username}\nSenha temporária: {access.temporary_password}",
+                language=None,
+            )
         except BusinessError as exc:
             st.error(str(exc))
 
@@ -35,6 +47,7 @@ with edit_tab:
             {
                 "ID": employee.id,
                 "Nome": employee.name,
+                "Usuário": employee.username or "Acesso pendente",
                 "Função": employee.role.value,
                 "Status": "Ativo" if employee.active else "Inativo",
             }
@@ -72,6 +85,27 @@ with edit_tab:
                 update_employee(selected.id, edited_name, edited_role, edited_active)
                 st.success("Colaborador atualizado.")
                 st.rerun()
+            except BusinessError as exc:
+                st.error(str(exc))
+        st.divider()
+        st.write("**Acesso do colaborador**")
+        st.caption(
+            f"Usuário: {selected.username or 'será criado ao gerar a senha'}"
+        )
+        if st.button(
+            "Gerar nova senha",
+            type="primary",
+            key=f"reset_password_{selected.id}",
+        ):
+            try:
+                access = reset_employee_password(selected.id)
+                st.warning(
+                    "Copie os dados abaixo agora. A nova senha não será mostrada novamente."
+                )
+                st.code(
+                    f"Usuário: {access.username}\nSenha temporária: {access.temporary_password}",
+                    language=None,
+                )
             except BusinessError as exc:
                 st.error(str(exc))
 st.caption(

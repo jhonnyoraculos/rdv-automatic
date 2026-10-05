@@ -6,7 +6,11 @@ from enum import Enum
 
 import bcrypt
 import streamlit as st
+from sqlalchemy import func, select
 from streamlit.errors import StreamlitSecretNotFoundError
+
+from database import session_scope
+from models import Employee
 
 
 class AdminRole(str, Enum):
@@ -77,6 +81,19 @@ def is_authenticated() -> bool:
     return bool(st.session_state.get("admin_authenticated", False))
 
 
+def is_employee_authenticated() -> bool:
+    return bool(st.session_state.get("employee_authenticated", False))
+
+
+def current_employee_id() -> int | None:
+    if not is_employee_authenticated():
+        return None
+    try:
+        return int(st.session_state["employee_id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def current_admin_role() -> AdminRole | None:
     if not is_authenticated():
         return None
@@ -109,6 +126,35 @@ def login(username: str, password: str) -> bool:
     return False
 
 
+def login_employee(username: str, password: str) -> bool:
+    supplied_username = username.strip()
+    if not supplied_username or not password:
+        return False
+    with session_scope() as session:
+        employee = session.scalar(
+            select(Employee).where(
+                func.lower(Employee.username) == supplied_username.lower(),
+                Employee.active.is_(True),
+            )
+        )
+        if not employee or not employee.password_hash:
+            return False
+        try:
+            valid = bcrypt.checkpw(
+                password.encode("utf-8"), employee.password_hash.encode("utf-8")
+            )
+        except (ValueError, TypeError):
+            valid = False
+        if not valid:
+            return False
+        employee_id = employee.id
+        employee_name = employee.name
+    st.session_state["employee_authenticated"] = True
+    st.session_state["employee_id"] = employee_id
+    st.session_state["employee_name"] = employee_name
+    return True
+
+
 def logout() -> None:
     for key in (
         "admin_authenticated",
@@ -117,6 +163,10 @@ def logout() -> None:
         "selected_rdv_id",
         "opened_rdv_id",
         "test_role_switcher",
+        "employee_authenticated",
+        "employee_id",
+        "employee_name",
+        "post_login_redirect",
     ):
         st.session_state.pop(key, None)
 

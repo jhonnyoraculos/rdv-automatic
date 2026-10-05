@@ -21,7 +21,6 @@ from services import (
     get_rdvs,
     reject_rdv,
 )
-from signature_component import signature_pad
 from ui import (
     company_header,
     require_admin,
@@ -214,11 +213,6 @@ with details_right:
         f"**Adiantamento:** {'Sim' if rdv.advance_received else 'Não'} — {format_brl(rdv.advance_amount)}"
     )
     st.write(f"**Revisado em:** {format_datetime(rdv.reviewed_at)}")
-    st.write(f"**Data da assinatura:** {format_date(rdv.signed_date)}")
-    st.write(
-        "**Assinatura do colaborador:** "
-        + ("Digital" if rdv.signature_data else "Pessoalmente na folha impressa")
-    )
     st.write(
         f"**Analista:** {rdv.analyst_username or 'Pendente'}"
         f" — {format_datetime(rdv.analyst_signed_at)}"
@@ -271,38 +265,21 @@ download_cols[3].download_button(
 
 can_review = rdv.status == assigned_status
 if can_review:
-    st.subheader(f"Assinatura e aprovação — {role_label}")
-    st.caption("Assine no quadro usando o mouse ou o dedo antes de aprovar.")
-    approval_context = f"{admin_role.value}_{rdv.id}_{rdv.updated_at}"
-    signature_state_key = f"approval_signature_png_{approval_context}"
-    current_signature = signature_pad(key=f"approval_signature_{approval_context}")
-    if current_signature:
-        st.session_state[signature_state_key] = current_signature
-    else:
-        st.session_state.pop(signature_state_key, None)
-    approval_signature = st.session_state.get(signature_state_key)
-    if approval_signature:
-        st.success("Assinatura registrada. O RDV está pronto para sua aprovação.")
-    else:
-        st.caption("A assinatura é obrigatória para aprovar.")
-
+    st.subheader(f"Aprovação — {role_label}")
     action_cols = st.columns(2)
     if action_cols[0].button(
-        "ASSINAR E APROVAR",
+        "APROVAR RDV",
         type="primary",
-        disabled=approval_signature is None,
         use_container_width=True,
     ):
         try:
-            approved = approve_rdv(
-                rdv.id, admin_role.value, approval_signature, admin_username
-            )
+            approved = approve_rdv(rdv.id, admin_role.value, admin_username)
             if approved.status == SubmissionStatus.AGUARDANDO_GESTOR:
-                st.success("RDV assinado pelo analista e enviado ao gestor.")
+                st.success("RDV aprovado pelo analista e enviado ao gestor.")
             else:
                 st.session_state[f"dashboard_status_{admin_role.value}"] = None
                 st.session_state["opened_rdv_id"] = rdv.id
-                st.success("RDV assinado pelo gestor e concluído.")
+                st.success("RDV aprovado pelo gestor e concluído.")
             st.rerun()
         except BusinessError as exc:
             st.error(str(exc))
@@ -325,7 +302,7 @@ elif rdv.status in (
 
 with st.expander("Excluir esta folha para o colaborador refazer", expanded=False):
     st.warning(
-        "A exclusão remove a folha e todas as assinaturas. O colaborador poderá preencher e enviar um novo RDV para esta quinzena."
+        "A exclusão remove a folha. O colaborador poderá preencher e enviar um novo RDV para esta quinzena."
     )
     delete_confirmed = st.checkbox(
         "Confirmo que desejo excluir definitivamente esta folha.",

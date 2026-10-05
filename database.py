@@ -69,29 +69,37 @@ def init_db() -> None:
         if _initialized:
             return
         Base.metadata.create_all(bind=engine)
+        employee_columns = {
+            column["name"] for column in inspect(engine).get_columns("employees")
+        }
+        period_columns = {
+            column["name"] for column in inspect(engine).get_columns("rdv_periods")
+        }
         submission_columns = {
             column["name"]: column
             for column in inspect(engine).get_columns("rdv_submissions")
         }
         existing = set(submission_columns)
         statements = []
+        false_literal = "FALSE" if engine.dialect.name == "postgresql" else "0"
+        if "username" not in employee_columns:
+            statements.append("ALTER TABLE employees ADD COLUMN username VARCHAR(100)")
+        if "password_hash" not in employee_columns:
+            statements.append(
+                "ALTER TABLE employees ADD COLUMN password_hash VARCHAR(200)"
+            )
+        if "automatic" not in period_columns:
+            statements.append(
+                "ALTER TABLE rdv_periods ADD COLUMN automatic BOOLEAN NOT NULL "
+                f"DEFAULT {false_literal}"
+            )
         if "location" not in existing:
             statements.append(
                 "ALTER TABLE rdv_submissions ADD COLUMN location VARCHAR(80) NOT NULL DEFAULT ''"
             )
-        if "signed_date" not in existing:
-            statements.append("ALTER TABLE rdv_submissions ADD COLUMN signed_date DATE")
-        if "signature_data" not in existing:
-            binary_type = "BYTEA" if engine.dialect.name == "postgresql" else "BLOB"
-            statements.append(
-                f"ALTER TABLE rdv_submissions ADD COLUMN signature_data {binary_type}"
-            )
-        binary_type = "BYTEA" if engine.dialect.name == "postgresql" else "BLOB"
         new_columns = {
-            "analyst_signature_data": binary_type,
             "analyst_signed_at": "TIMESTAMP",
             "analyst_username": "VARCHAR(100)",
-            "manager_signature_data": binary_type,
             "manager_signed_at": "TIMESTAMP",
             "manager_username": "VARCHAR(100)",
         }
@@ -111,4 +119,11 @@ def init_db() -> None:
             with engine.begin() as connection:
                 for statement in statements:
                     connection.execute(text(statement))
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS "
+                    "uq_employees_username ON employees (username)"
+                )
+            )
         _initialized = True

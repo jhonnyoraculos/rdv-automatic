@@ -3,7 +3,7 @@ from sqlalchemy import create_engine, inspect, text
 import database
 
 
-def test_init_db_adds_signature_columns_to_existing_database(
+def test_init_db_adds_access_and_automatic_period_columns(
     tmp_path, monkeypatch
 ) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
@@ -16,18 +16,16 @@ def test_init_db_adds_signature_columns_to_existing_database(
 
     database.init_db()
 
-    columns = {
+    submission_columns = {
         column["name"] for column in inspect(engine).get_columns("rdv_submissions")
     }
-    assert {
-        "location",
-        "signed_date",
-        "signature_data",
-        "analyst_signature_data",
-        "analyst_signed_at",
-        "analyst_username",
-        "manager_signature_data",
-        "manager_signed_at",
-        "manager_username",
-    } <= columns
+    employee_columns = {
+        column["name"] for column in inspect(engine).get_columns("employees")
+    }
+    period_columns = {
+        column["name"] for column in inspect(engine).get_columns("rdv_periods")
+    }
+    assert {"location", "analyst_signed_at", "manager_signed_at"} <= submission_columns
+    assert {"username", "password_hash"} <= employee_columns
+    assert "automatic" in period_columns
     engine.dispose()

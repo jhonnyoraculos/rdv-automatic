@@ -1,17 +1,17 @@
 # RDV — Relatório de Despesas de Viagem
 
-Aplicação Streamlit para envio, análise e exportação dos RDVs de motoristas e ajudantes de motorista. A área do colaborador não exige login; todas as telas de gestão são protegidas por credenciais administrativas.
+Aplicação Streamlit para envio, análise e exportação dos RDVs de motoristas e ajudantes de motorista. Cada colaborador usa seu próprio acesso e as telas de gestão permanecem protegidas por credenciais administrativas.
 
 ## Recursos
 
-- formulário responsivo gerado a partir do período ativo;
-- local e data obrigatórios, com escolha entre assinatura digital ou presencial na folha impressa;
-- quadro de assinatura responsivo, com modo ampliado para celular, desfazer e limpar;
-- aprovação em duas etapas, com assinatura do analista e aprovação final assinada pelo gestor;
-- folha concluída com as três assinaturas disponível ao colaborador, analista e gestor;
+- formulário mobile-first gerado a partir do período ativo e do colaborador autenticado;
+- acesso individual com senha temporária aleatória armazenada somente como hash;
+- redefinição administrativa de senha, exibida uma única vez;
+- aprovação em duas etapas, pelo analista e pelo gestor;
+- folha concluída com linhas para assinaturas físicas do colaborador, analista e gestor;
 - folha disponível para visualização e download em PDF e PNG;
 - exclusão administrativa da folha para liberar um novo preenchimento;
-- criação e ativação automáticas das quinzenas seguintes no padrão de 13 dias com um dia de intervalo;
+- criação e ativação automáticas dos períodos de 13 dias, com um dia de intervalo, a partir de 28/09/2026;
 - seletor temporário de perfil no painel para alternar entre analista e gestor durante os testes;
 - modelos distintos para motorista e ajudante;
 - total da quinzena formado somente por diária e ticket, com hotel e adiantamento mantidos como informações separadas em `Decimal`;
@@ -73,7 +73,7 @@ Execute:
 streamlit run app.py
 ```
 
-As tabelas e o arquivo `data/rdv.db` são criados automaticamente no primeiro acesso. Entre em `/admin`, cadastre os colaboradores e crie um período ativo antes de liberar o formulário público.
+As tabelas e o arquivo `data/rdv.db` são criados automaticamente no primeiro acesso. Entre em `/acesso` com uma conta administrativa e cadastre os colaboradores. O usuário e a senha temporária são mostrados no momento do cadastro; a senha original não pode ser recuperada depois.
 
 ## PostgreSQL
 
@@ -104,9 +104,12 @@ Os testes de serviço usam um SQLite temporário e não alteram o banco de desen
 ## Regras importantes
 
 - existe no máximo um período ativo;
+- a sequência automática começa em 28/09/2026 a 10/10/2026;
+- cada colaborador autenticado só preenche o próprio RDV;
 - colaborador e período formam uma chave única no RDV;
 - RDVs enviados/aprovados não podem ser duplicados;
 - RDV rejeitado é reaberto e reenviado no mesmo protocolo;
 - somente o analista aprova a primeira etapa e somente o gestor conclui a aprovação;
+- assinaturas são feitas fisicamente na folha impressa;
 - a gravação do cabeçalho e de todos os dias ocorre em uma única transação;
 - nenhum valor monetário é armazenado como `float`.
