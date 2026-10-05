@@ -1,16 +1,23 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
 import os
+import secrets
+from datetime import timedelta
 from enum import Enum
 
 import bcrypt
 import streamlit as st
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from streamlit.errors import StreamlitSecretNotFoundError
 
+from browser_session import COOKIE_NAME
 from database import session_scope
-from models import Employee
+from models import Employee, EmployeeSession
+from utils import now_sp
+
+PERSISTENT_SESSION_DAYS = 90
 
 
 class AdminRole(str, Enum):
@@ -94,6 +101,58 @@ def current_employee_id() -> int | None:
         return None
 
 
+def _employee_token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _browser_employee_token() -> str:
+    try:
+        return str(st.context.cookies.get(COOKIE_NAME, "")).strip()
+    except (AttributeError, RuntimeError):
+        return ""
+
+
+def restore_employee_login() -> bool:
+    if is_authenticated() or is_employee_authenticated():
+        return is_employee_authenticated()
+    if st.session_state.get("clear_persistent_employee_cookie"):
+        return False
+    token = _browser_employee_token()
+    if not token:
+        return False
+    with session_scope() as session:
+        timestamp = now_sp()
+        session.execute(
+            delete(EmployeeSession).where(EmployeeSession.expires_at <= timestamp)
+        )
+        employee = session.scalar(
+            select(Employee)
+            .join(EmployeeSession, EmployeeSession.employee_id == Employee.id)
+            .where(
+                EmployeeSession.token_hash == _employee_token_hash(token),
+                EmployeeSession.expires_at > timestamp,
+                Employee.active.is_(True),
+            )
+        )
+        if not employee:
+            return False
+        employee_id = employee.id
+        employee_name = employee.name
+    st.session_state["employee_authenticated"] = True
+    st.session_state["employee_id"] = employee_id
+    st.session_state["employee_name"] = employee_name
+    st.session_state["active_employee_session_token"] = token
+    return True
+
+
+def consume_new_employee_token() -> str:
+    return str(st.session_state.pop("new_employee_session_token", ""))
+
+
+def consume_cookie_clear_request() -> bool:
+    return bool(st.session_state.pop("clear_persistent_employee_cookie", False))
+
+
 def current_admin_role() -> AdminRole | None:
     if not is_authenticated():
         return None
@@ -147,15 +206,44 @@ def login_employee(username: str, password: str) -> bool:
             valid = False
         if not valid:
             return False
+        timestamp = now_sp()
+        token = secrets.token_urlsafe(32)
+        session.execute(
+            delete(EmployeeSession).where(EmployeeSession.expires_at <= timestamp)
+        )
+        session.add(
+            EmployeeSession(
+                employee_id=employee.id,
+                token_hash=_employee_token_hash(token),
+                expires_at=timestamp + timedelta(days=PERSISTENT_SESSION_DAYS),
+                created_at=timestamp,
+            )
+        )
+        session.flush()
         employee_id = employee.id
         employee_name = employee.name
     st.session_state["employee_authenticated"] = True
     st.session_state["employee_id"] = employee_id
     st.session_state["employee_name"] = employee_name
+    st.session_state["new_employee_session_token"] = token
+    st.session_state["active_employee_session_token"] = token
     return True
 
 
 def logout() -> None:
+    employee_token = _browser_employee_token()
+    active_token = str(st.session_state.get("active_employee_session_token", ""))
+    pending_token = str(st.session_state.get("new_employee_session_token", ""))
+    token_to_revoke = employee_token or active_token or pending_token
+    if token_to_revoke:
+        with session_scope() as session:
+            session.execute(
+                delete(EmployeeSession).where(
+                    EmployeeSession.token_hash == _employee_token_hash(token_to_revoke)
+                )
+            )
+    if token_to_revoke or is_employee_authenticated():
+        st.session_state["clear_persistent_employee_cookie"] = True
     for key in (
         "admin_authenticated",
         "admin_username",
@@ -167,6 +255,8 @@ def logout() -> None:
         "employee_id",
         "employee_name",
         "post_login_redirect",
+        "new_employee_session_token",
+        "active_employee_session_token",
     ):
         st.session_state.pop(key, None)
 

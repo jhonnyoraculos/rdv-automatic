@@ -5,6 +5,8 @@ import streamlit as st
 from auth import (
     AdminRole,
     auth_configured,
+    consume_cookie_clear_request,
+    consume_new_employee_token,
     current_admin_role,
     is_authenticated,
     is_employee_authenticated,
@@ -12,9 +14,14 @@ from auth import (
     login_employee,
     logout,
 )
+from browser_session import clear_employee_cookie, save_employee_cookie
 from ui import company_header
 
 company_header("Acesso ao RDV", "Entre com seu usuário e senha")
+
+if consume_cookie_clear_request():
+    clear_employee_cookie()
+    st.stop()
 
 if is_authenticated():
     if st.session_state.pop("post_login_redirect", None) == "admin":
@@ -59,8 +66,9 @@ if submitted:
         st.session_state["post_login_redirect"] = "admin"
         st.rerun()
     elif login_employee(username, password):
-        st.session_state["post_login_redirect"] = "employee"
-        st.rerun()
+        save_employee_cookie(consume_new_employee_token())
+        st.success("Acesso salvo neste dispositivo.")
+        st.stop()
     else:
         st.error("Usuário ou senha inválidos.")
 

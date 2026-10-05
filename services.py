@@ -11,7 +11,7 @@ from decimal import Decimal
 from threading import Lock
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -21,6 +21,7 @@ from models import (
     BenefitType,
     Employee,
     EmployeeRole,
+    EmployeeSession,
     RdvEntry,
     RdvPeriod,
     RdvSubmission,
@@ -134,6 +135,9 @@ def reset_employee_password(employee_id: int) -> EmployeeAccess:
         if not employee.username:
             employee.username = _available_username(session, employee.name)
         employee.password_hash = generate_password_hash(temporary_password)
+        session.execute(
+            delete(EmployeeSession).where(EmployeeSession.employee_id == employee.id)
+        )
         employee.updated_at = now_sp()
         session.flush()
         logger.info("Senha temporária renovada: colaborador=%s", employee.id)
@@ -159,6 +163,12 @@ def update_employee(
         employee.name = normalized_name
         employee.role = _role(role)
         employee.active = bool(active)
+        if not employee.active:
+            session.execute(
+                delete(EmployeeSession).where(
+                    EmployeeSession.employee_id == employee.id
+                )
+            )
         employee.updated_at = now_sp()
         session.flush()
         logger.info("Colaborador alterado: id=%s", employee.id)

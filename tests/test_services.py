@@ -1,4 +1,5 @@
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
@@ -75,6 +76,45 @@ def test_employee_access_is_generated_hashed_and_identifies_employee(monkeypatch
     monkeypatch.setattr(auth.st, "session_state", session_state)
     assert auth.login_employee(access.username, access.temporary_password)
     assert session_state["employee_id"] == access.employee.id
+
+
+def test_employee_login_is_restored_from_persistent_token(monkeypatch) -> None:
+    access = create_employee_with_access("Login Persistente", EmployeeRole.MOTORISTA)
+    first_session = {}
+    monkeypatch.setattr(auth.st, "session_state", first_session)
+    monkeypatch.setattr(auth.st, "context", SimpleNamespace(cookies={}))
+
+    assert auth.login_employee(access.username, access.temporary_password)
+    token = auth.consume_new_employee_token()
+    assert token
+
+    reopened_session = {}
+    monkeypatch.setattr(auth.st, "session_state", reopened_session)
+    monkeypatch.setattr(
+        auth.st,
+        "context",
+        SimpleNamespace(cookies={"rdv_employee_session": token}),
+    )
+    assert auth.restore_employee_login()
+    assert reopened_session["employee_id"] == access.employee.id
+    assert auth.current_employee_id() == access.employee.id
+
+
+def test_new_password_revokes_saved_logins(monkeypatch) -> None:
+    access = create_employee_with_access("Sessão Revogada", EmployeeRole.AJUDANTE)
+    monkeypatch.setattr(auth.st, "session_state", {})
+    monkeypatch.setattr(auth.st, "context", SimpleNamespace(cookies={}))
+    assert auth.login_employee(access.username, access.temporary_password)
+    token = auth.consume_new_employee_token()
+
+    reset_employee_password(access.employee.id)
+    monkeypatch.setattr(auth.st, "session_state", {})
+    monkeypatch.setattr(
+        auth.st,
+        "context",
+        SimpleNamespace(cookies={"rdv_employee_session": token}),
+    )
+    assert not auth.restore_employee_login()
 
 
 def test_reset_password_invalidates_previous_password(monkeypatch) -> None:

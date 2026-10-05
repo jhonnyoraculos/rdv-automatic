@@ -6,6 +6,7 @@ Aplicação Streamlit para envio, análise e exportação dos RDVs de motoristas
 
 - formulário mobile-first gerado a partir do período ativo e do colaborador autenticado;
 - acesso individual com senha temporária aleatória armazenada somente como hash;
+- login do colaborador lembrado por 90 dias no dispositivo, com token aleatório armazenado como hash;
 - redefinição administrativa de senha, exibida uma única vez;
 - aprovação em duas etapas, pelo analista e pelo gestor;
 - folha concluída com linhas para assinaturas físicas do colaborador, analista e gestor;
@@ -106,6 +107,7 @@ Os testes de serviço usam um SQLite temporário e não alteram o banco de desen
 - existe no máximo um período ativo;
 - a sequência automática começa em 28/09/2026 a 10/10/2026;
 - cada colaborador autenticado só preenche o próprio RDV;
+- sair, desativar o colaborador ou gerar nova senha revoga os acessos salvos;
 - colaborador e período formam uma chave única no RDV;
 - RDVs enviados/aprovados não podem ser duplicados;
 - RDV rejeitado é reaberto e reenviado no mesmo protocolo;

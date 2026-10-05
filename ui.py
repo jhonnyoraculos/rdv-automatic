@@ -42,6 +42,36 @@ APP_CSS = """
         border:1px solid #e2e7ee; border-radius:12px; overflow-wrap:anywhere;
     }
     .rdv-review-card strong { color:var(--jr-blue); font-size:1rem; }
+    div[data-testid="stTextInputRootElement"],
+    div[data-testid="stNumberInputContainer"],
+    div[data-testid="stSelectbox"] div[role="group"],
+    div[data-testid="stTextInput"] div[data-baseweb="input"],
+    div[data-testid="stNumberInput"] div[data-baseweb="input"],
+    div[data-testid="stDateInput"] div[data-baseweb="input"],
+    div[data-testid="stTextArea"] div[data-baseweb="textarea"],
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+        background:#fff !important;
+        border:1px solid #98a2b3 !important;
+        border-radius:9px !important;
+        box-shadow:0 1px 2px rgba(16,24,40,.05) !important;
+    }
+    div[data-testid="stTextInputRootElement"]:focus-within,
+    div[data-testid="stNumberInputContainer"]:focus-within,
+    div[data-testid="stSelectbox"] div[role="group"]:focus-within,
+    div[data-testid="stTextInput"] div[data-baseweb="input"]:focus-within,
+    div[data-testid="stNumberInput"] div[data-baseweb="input"]:focus-within,
+    div[data-testid="stDateInput"] div[data-baseweb="input"]:focus-within,
+    div[data-testid="stTextArea"] div[data-baseweb="textarea"]:focus-within,
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div:focus-within {
+        border-color:var(--jr-blue) !important;
+        box-shadow:0 0 0 3px rgba(20,58,102,.16) !important;
+    }
+    div[data-testid="stTextInput"] input,
+    div[data-testid="stNumberInput"] input,
+    div[data-testid="stDateInput"] input,
+    div[data-testid="stTextArea"] textarea {
+        color:var(--ink) !important;
+    }
     .status { display:inline-block; padding:4px 9px; border-radius:99px; font-size:.78rem; font-weight:800; }
     .status-enviado { background:#fff1cc; color:#8a5b00; }
     .status-aguardando_gestor { background:#dcecff; color:#154f8b; }

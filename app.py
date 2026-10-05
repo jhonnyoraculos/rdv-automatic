@@ -4,7 +4,7 @@ import logging
 
 import streamlit as st
 
-from auth import is_authenticated, is_employee_authenticated
+from auth import is_authenticated, is_employee_authenticated, restore_employee_login
 from database import init_db
 from ui import apply_style
 
@@ -21,6 +21,7 @@ logging.basicConfig(
 )
 init_db()
 apply_style()
+restore_employee_login()
 
 public_page = st.Page(
     "pages/formulario.py", title="Enviar RDV", icon="🧾", url_path="rdv"

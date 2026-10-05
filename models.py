@@ -76,6 +76,24 @@ class Employee(Base):
     submissions: Mapped[list[RdvSubmission]] = relationship(back_populates="employee")
 
 
+class EmployeeSession(Base):
+    __tablename__ = "employee_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
 class RdvPeriod(Base):
     __tablename__ = "rdv_periods"
     __table_args__ = (
