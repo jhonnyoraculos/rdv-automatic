@@ -22,6 +22,7 @@ PHYSICAL_SIGNATURE_LABELS = (
     "ANALISTA DE FROTA",
     "GESTOR DE FROTA",
 )
+PDF_LAYOUT_VERSION = "3-assinaturas-2026-10-08"
 
 
 def _entry_rows(rdv: RdvSubmission) -> list[list[object]]:

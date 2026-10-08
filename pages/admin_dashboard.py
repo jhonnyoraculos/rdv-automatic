@@ -8,7 +8,14 @@ from auth import (
     current_admin_role,
     current_admin_username,
 )
-from exports import pdf_to_png, rdv_to_csv, rdv_to_pdf, rdv_to_xlsx, rdvs_to_xlsx
+from exports import (
+    PDF_LAYOUT_VERSION,
+    pdf_to_png,
+    rdv_to_csv,
+    rdv_to_pdf,
+    rdv_to_xlsx,
+    rdvs_to_xlsx,
+)
 from models import EmployeeRole, SubmissionStatus
 from print_document import print_pdf_button
 from services import (
@@ -233,14 +240,18 @@ if rdv.status == SubmissionStatus.APROVADO:
     st.success("RDV concluído e pronto para impressão.")
     print_pdf_button(
         pdf_data,
-        key=f"print_approved_rdv_{rdv.id}_{rdv.updated_at}",
+        key=f"print_approved_rdv_{rdv.id}_{rdv.updated_at}_{PDF_LAYOUT_VERSION}",
     )
 st.subheader("Folha do RDV para conferência")
 mobile_tab, pdf_tab = st.tabs(["Visualização para celular", "Visualização em PDF"])
 with mobile_tab:
     st.image(png_data, use_container_width=True)
 with pdf_tab:
-    st.pdf(pdf_data, height=800, key=f"rdv_pdf_{rdv.id}_{rdv.updated_at}")
+    st.pdf(
+        pdf_data,
+        height=800,
+        key=f"rdv_pdf_{rdv.id}_{rdv.updated_at}_{PDF_LAYOUT_VERSION}",
+    )
 
 download_cols = st.columns(4)
 download_cols[0].download_button(

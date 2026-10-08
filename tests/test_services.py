@@ -1,6 +1,7 @@
 from datetime import date
 from types import SimpleNamespace
 
+import pypdfium2 as pdfium
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -205,12 +206,28 @@ def test_pdf_is_generated_with_physical_signature_lines() -> None:
         "Bauru/SP",
     )
 
-    assert rdv_to_pdf(rdv).startswith(b"%PDF")
+    pdf_data = rdv_to_pdf(rdv)
+    assert pdf_data.startswith(b"%PDF")
     assert PHYSICAL_SIGNATURE_LABELS == (
         "ASSINATURA DO COLABORADOR",
         "ANALISTA DE FROTA",
         "GESTOR DE FROTA",
     )
+    document = pdfium.PdfDocument(pdf_data)
+    try:
+        page = document[0]
+        try:
+            text_page = page.get_textpage()
+            try:
+                pdf_text = text_page.get_text_range()
+            finally:
+                text_page.close()
+        finally:
+            page.close()
+    finally:
+        document.close()
+    for label in PHYSICAL_SIGNATURE_LABELS:
+        assert label in pdf_text
 
 
 def test_analyst_approval_concludes_the_rdv() -> None:

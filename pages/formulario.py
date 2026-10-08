@@ -6,7 +6,7 @@ from html import escape
 import streamlit as st
 
 from auth import current_employee_id, logout
-from exports import pdf_to_png, rdv_to_pdf
+from exports import PDF_LAYOUT_VERSION, pdf_to_png, rdv_to_pdf
 from models import BenefitType, EmployeeRole, SubmissionStatus
 from services import (
     BusinessError,
@@ -69,7 +69,11 @@ if existing and existing.status == SubmissionStatus.APROVADO:
     with mobile_tab:
         st.image(final_png, use_container_width=True)
     with pdf_tab:
-        st.pdf(final_pdf, height=800, key=f"public_final_pdf_{existing.id}")
+        st.pdf(
+            final_pdf,
+            height=800,
+            key=f"public_final_pdf_{existing.id}_{PDF_LAYOUT_VERSION}",
+        )
     pdf_col, png_col = st.columns(2)
     pdf_col.download_button(
         "BAIXAR EM PDF",

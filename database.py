@@ -44,6 +44,7 @@ engine = _build_engine()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 _init_lock = Lock()
 _initialized = False
+PERIOD_RESET_EVENT = "reset_periods_and_rdvs_2026_10_08_v1"
 
 
 @contextmanager
@@ -57,6 +58,46 @@ def session_scope() -> Iterator[Session]:
         raise
     finally:
         session.close()
+
+
+def reset_periods_and_rdvs_once() -> bool:
+    """Remove all period data once while preserving employees and access."""
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS app_maintenance_events (
+                    event_key VARCHAR(120) PRIMARY KEY,
+                    applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        inserted = connection.execute(
+            text(
+                """
+                INSERT INTO app_maintenance_events (event_key)
+                VALUES (:event_key)
+                ON CONFLICT (event_key) DO NOTHING
+                """
+            ),
+            {"event_key": PERIOD_RESET_EVENT},
+        )
+        if inserted.rowcount != 1:
+            return False
+
+        if engine.dialect.name == "postgresql":
+            connection.execute(
+                text(
+                    "TRUNCATE TABLE rdv_entries, rdv_submissions, rdv_periods "
+                    "RESTART IDENTITY CASCADE"
+                )
+            )
+        else:
+            connection.execute(text("DELETE FROM rdv_entries"))
+            connection.execute(text("DELETE FROM rdv_submissions"))
+            connection.execute(text("DELETE FROM rdv_periods"))
+    return True
 
 
 def init_db() -> None:
@@ -126,4 +167,5 @@ def init_db() -> None:
                     "uq_employees_username ON employees (username)"
                 )
             )
+        reset_periods_and_rdvs_once()
         _initialized = True
