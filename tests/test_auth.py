@@ -1,10 +1,30 @@
 import auth
+import browser_session
 from auth import (
     AdminRole,
     generate_password_hash,
     switch_admin_role,
     verify_credentials,
 )
+
+
+def test_employee_cookie_triggers_streamlit_without_reloading_browser(
+    monkeypatch,
+) -> None:
+    mounted = {}
+    monkeypatch.setattr(
+        browser_session,
+        "_cookie_control",
+        lambda **kwargs: mounted.update(kwargs),
+    )
+
+    browser_session.save_employee_cookie("temporary-token")
+
+    assert mounted["data"]["action"] == "save"
+    assert mounted["data"]["value"] == "temporary-token"
+    assert callable(mounted["on_completed_change"])
+    assert "window.location.reload" not in browser_session.COOKIE_JS
+    assert 'setTriggerValue("completed"' in browser_session.COOKIE_JS
 
 
 def test_legacy_password_creates_analyst_and_manager_accounts(monkeypatch) -> None:

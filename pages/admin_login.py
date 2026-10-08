@@ -66,8 +66,9 @@ if submitted:
         st.session_state["post_login_redirect"] = "admin"
         st.rerun()
     elif login_employee(username, password):
+        st.session_state["post_login_redirect"] = "employee"
         save_employee_cookie(consume_new_employee_token())
-        st.success("Acesso salvo neste dispositivo.")
+        st.info("Acesso confirmado. Abrindo o formulário do RDV...")
         st.stop()
     else:
         st.error("Usuário ou senha inválidos.")

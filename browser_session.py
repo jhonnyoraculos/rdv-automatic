@@ -7,7 +7,7 @@ COOKIE_MAX_AGE_SECONDS = 90 * 24 * 60 * 60
 
 COOKIE_HTML = '<div class="rdv-cookie-control"></div>'
 COOKIE_JS = """
-export default function({ parentElement, data }) {
+export default function({ parentElement, data, setTriggerValue }) {
     const marker = parentElement.querySelector('.rdv-cookie-control');
     const operation = `${data.action}:${data.value || ''}`;
     if (marker.dataset.operation === operation) return;
@@ -17,7 +17,7 @@ export default function({ parentElement, data }) {
     const maxAge = data.action === "save" ? data.maxAge : 0;
     document.cookie = data.name + "=" + value + "; Path=/; Max-Age=" + maxAge
         + "; SameSite=Lax" + secure;
-    setTimeout(() => window.location.reload(), 100);
+    setTriggerValue("completed", operation);
 }
 """
 
@@ -37,6 +37,7 @@ def save_employee_cookie(token: str) -> None:
             "maxAge": COOKIE_MAX_AGE_SECONDS,
         },
         key="save_employee_cookie",
+        on_completed_change=lambda: None,
     )
 
 
@@ -44,4 +45,5 @@ def clear_employee_cookie() -> None:
     _cookie_control(
         data={"action": "clear", "name": COOKIE_NAME, "value": "", "maxAge": 0},
         key="clear_employee_cookie",
+        on_completed_change=lambda: None,
     )
