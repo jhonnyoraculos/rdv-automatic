@@ -106,12 +106,14 @@ Os testes de serviço usam um SQLite temporário e não alteram o banco de desen
 
 - existe no máximo um período ativo;
 - a sequência automática começa em 28/09/2026 a 10/10/2026;
+- a próxima quinzena é ativada na sexta-feira anterior, deixando o domingo fora;
+- os colaboradores fornecidos são cadastrados automaticamente como motorista ou ajudante;
 - cada colaborador autenticado só preenche o próprio RDV;
 - sair, desativar o colaborador ou gerar nova senha revoga os acessos salvos;
 - colaborador e período formam uma chave única no RDV;
 - RDVs enviados/aprovados não podem ser duplicados;
 - RDV rejeitado é reaberto e reenviado no mesmo protocolo;
-- somente o analista aprova a primeira etapa e somente o gestor conclui a aprovação;
+- somente o analista aprova ou rejeita o RDV e a aprovação já conclui o relatório;
 - assinaturas são feitas fisicamente na folha impressa;
 - a gravação do cabeçalho e de todos os dias ocorre em uma única transação;
 - nenhum valor monetário é armazenado como `float`.

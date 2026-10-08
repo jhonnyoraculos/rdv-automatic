@@ -7,7 +7,6 @@ from auth import (
     AdminRole,
     current_admin_role,
     current_admin_username,
-    switch_admin_role,
 )
 from exports import pdf_to_png, rdv_to_csv, rdv_to_pdf, rdv_to_xlsx, rdvs_to_xlsx
 from models import EmployeeRole, SubmissionStatus
@@ -43,30 +42,15 @@ if admin_role is None:
     st.stop()
 admin_username = current_admin_username()
 role_label = (
-    "Analista de frota" if admin_role == AdminRole.ANALISTA else "Gestor de frota"
+    "Analista de frota" if admin_role == AdminRole.ANALISTA else "Consulta administrativa"
 )
 company_header(
     "Painel RDV", f"{role_label} — acompanhamento e aprovação dos relatórios"
 )
 if notice := st.session_state.pop("dashboard_notice", None):
     st.success(notice)
-role_options = list(AdminRole)
-selected_role = st.selectbox(
-    "Perfil ativo para testes",
-    role_options,
-    index=role_options.index(admin_role),
-    format_func=lambda role: (
-        "Analista de frota" if role == AdminRole.ANALISTA else "Gestor de frota"
-    ),
-    key="test_role_switcher",
-    help="Opção temporária para testar as duas etapas sem sair da conta.",
-)
-if selected_role != admin_role:
-    switch_admin_role(selected_role)
-    st.rerun()
-st.caption(
-    "Modo temporário de testes: troque o perfil acima para executar a etapa do analista ou do gestor."
-)
+if admin_role != AdminRole.ANALISTA:
+    st.info("A aprovação e a rejeição dos RDVs são exclusivas do analista de frota.")
 
 periods = get_periods()
 period_by_id = {period.id: period for period in periods}
@@ -84,21 +68,16 @@ period_filter = st.selectbox(
     key="dashboard_period",
 )
 stats = dashboard_stats(period_filter)
-metric_cols = st.columns(5)
-metric_cols[0].metric("Aguardando analista", stats["counts"]["ENVIADO"])
-metric_cols[1].metric("Aguardando gestor", stats["counts"]["AGUARDANDO_GESTOR"])
-metric_cols[2].metric("Concluídos", stats["counts"]["APROVADO"])
-metric_cols[3].metric("Rejeitados", stats["counts"]["REJEITADO"])
-metric_cols[4].metric("Total da quinzena", format_brl(stats["expense_total"]))
-assigned_status = (
-    SubmissionStatus.ENVIADO
-    if admin_role == AdminRole.ANALISTA
-    else SubmissionStatus.AGUARDANDO_GESTOR
-)
-pending = stats["counts"][assigned_status.value]
-st.info(
-    f"{pending} RDV{'s' if pending != 1 else ''} aguardando sua aprovação como {role_label.lower()}."
-)
+pending = stats["counts"]["ENVIADO"] + stats["counts"]["AGUARDANDO_GESTOR"]
+metric_cols = st.columns(4)
+metric_cols[0].metric("Aguardando analista", pending)
+metric_cols[1].metric("Concluídos", stats["counts"]["APROVADO"])
+metric_cols[2].metric("Rejeitados", stats["counts"]["REJEITADO"])
+metric_cols[3].metric("Total da quinzena", format_brl(stats["expense_total"]))
+if admin_role == AdminRole.ANALISTA:
+    st.info(
+        f"{pending} RDV{'s' if pending != 1 else ''} aguardando sua aprovação."
+    )
 
 st.subheader("Relatórios")
 with st.expander("Filtros", expanded=False):
@@ -123,9 +102,11 @@ with st.expander("Filtros", expanded=False):
         today = now_sp().date()
         date_cols = st.columns(2)
         submitted_from = date_cols[0].date_input(
-            "Enviado a partir de", value=today.replace(day=1)
+            "Enviado a partir de", value=today.replace(day=1), format="DD/MM/YYYY"
         )
-        submitted_to = date_cols[1].date_input("Enviado até", value=today)
+        submitted_to = date_cols[1].date_input(
+            "Enviado até", value=today, format="DD/MM/YYYY"
+        )
 
 rdvs = get_rdvs(
     period_id=period_filter,
@@ -151,26 +132,29 @@ for rdv in rdvs:
     )
 rdv_table = pd.DataFrame(rows)
 display_table = rdv_table
+selected_rows: list[int] = []
 if not rdv_table.empty:
     status_colors = {
         "AGUARDANDO ANALISTA": "background-color: #fff1cc; color: #8a5b00; font-weight: 700",
-        "AGUARDANDO GESTOR": "background-color: #dcecff; color: #154f8b; font-weight: 700",
         "CONCLUÍDO": "background-color: #dff6e8; color: #116b39; font-weight: 700",
         "REJEITADO": "background-color: #fde2e5; color: #a11427; font-weight: 700",
     }
     display_table = rdv_table.style.map(
         lambda value: status_colors.get(str(value), ""), subset=["Status"]
     )
-table_event = st.dataframe(
-    display_table,
-    use_container_width=True,
-    hide_index=True,
-    on_select="rerun",
-    selection_mode="single-row",
-    key=f"rdv_list_table_{st.session_state.get('rdv_table_revision', 0)}",
-)
 if rdvs:
-    st.caption("Clique em uma linha da tabela para abrir a folha do RDV.")
+    table_event = st.dataframe(
+        display_table,
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key=f"rdv_list_table_{st.session_state.get('rdv_table_revision', 0)}",
+    )
+    selected_rows = table_event.selection.rows
+    st.caption(
+        "Clique em uma linha da tabela ou use a lista abaixo para abrir a folha do RDV."
+    )
     st.download_button(
         "Baixar Excel dos resultados filtrados",
         data=rdvs_to_xlsx(rdvs),
@@ -182,7 +166,29 @@ else:
 
 available_ids = [item.id for item in rdvs]
 selected_id = st.session_state.get("opened_rdv_id")
-selected_rows = table_event.selection.rows
+if rdvs:
+    picked_id = st.selectbox(
+        "Abrir relatório",
+        [None, *available_ids],
+        index=(
+            available_ids.index(selected_id) + 1
+            if selected_id in available_ids
+            else 0
+        ),
+        format_func=lambda value: (
+            "Selecione um relatório..."
+            if value is None
+            else next(
+                f"{protocol(item.id)} — {item.employee.name}"
+                for item in rdvs
+                if item.id == value
+            )
+        ),
+        key=f"rdv_mobile_picker_{st.session_state.get('rdv_table_revision', 0)}",
+    )
+    if picked_id is not None:
+        selected_id = picked_id
+        st.session_state["opened_rdv_id"] = selected_id
 if selected_rows:
     selected_id = rdvs[selected_rows[0]].id
     st.session_state["opened_rdv_id"] = selected_id
@@ -216,10 +222,6 @@ with details_right:
     st.write(
         f"**Analista:** {rdv.analyst_username or 'Pendente'}"
         f" — {format_datetime(rdv.analyst_signed_at)}"
-    )
-    st.write(
-        f"**Gestor:** {rdv.manager_username or 'Pendente'}"
-        f" — {format_datetime(rdv.manager_signed_at)}"
     )
     if rdv.admin_comment:
         st.write(f"**Motivo da rejeição:** {rdv.admin_comment}")
@@ -263,7 +265,10 @@ download_cols[3].download_button(
     use_container_width=True,
 )
 
-can_review = rdv.status == assigned_status
+can_review = admin_role == AdminRole.ANALISTA and rdv.status in (
+    SubmissionStatus.ENVIADO,
+    SubmissionStatus.AGUARDANDO_GESTOR,
+)
 if can_review:
     st.subheader(f"Aprovação — {role_label}")
     action_cols = st.columns(2)
@@ -273,13 +278,9 @@ if can_review:
         use_container_width=True,
     ):
         try:
-            approved = approve_rdv(rdv.id, admin_role.value, admin_username)
-            if approved.status == SubmissionStatus.AGUARDANDO_GESTOR:
-                st.success("RDV aprovado pelo analista e enviado ao gestor.")
-            else:
-                st.session_state[f"dashboard_status_{admin_role.value}"] = None
-                st.session_state["opened_rdv_id"] = rdv.id
-                st.success("RDV aprovado pelo gestor e concluído.")
+            approve_rdv(rdv.id, admin_role.value, admin_username)
+            st.session_state["opened_rdv_id"] = rdv.id
+            st.success("RDV aprovado pelo analista e concluído.")
             st.rerun()
         except BusinessError as exc:
             st.error(str(exc))

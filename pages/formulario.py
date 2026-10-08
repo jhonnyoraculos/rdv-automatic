@@ -96,7 +96,7 @@ if existing and existing.status in (
     )
     status_label = {
         SubmissionStatus.ENVIADO: "Aguardando análise",
-        SubmissionStatus.AGUARDANDO_GESTOR: "Aguardando aprovação do gestor",
+        SubmissionStatus.AGUARDANDO_GESTOR: "Aguardando aprovação do analista",
     }[existing.status]
     st.caption(
         f"Status atual: {status_label}. Em caso de dúvida, fale com o responsável pela frota."

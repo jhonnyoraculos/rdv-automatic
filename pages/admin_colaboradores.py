@@ -7,6 +7,7 @@ from models import EmployeeRole
 from services import (
     BusinessError,
     create_employee_with_access,
+    generate_pending_employee_access,
     get_employees,
     reset_employee_password,
     update_employee,
@@ -40,6 +41,24 @@ with create_tab:
             st.error(str(exc))
 
 with edit_tab:
+    if st.button(
+        "Gerar acessos pendentes",
+        help="Cria uma senha temporária para todos os colaboradores que ainda não possuem acesso.",
+    ):
+        accesses = generate_pending_employee_access()
+        if accesses:
+            st.warning(
+                "Copie estes acessos agora. As senhas não serão mostradas novamente."
+            )
+            st.code(
+                "\n".join(
+                    f"{item.employee.name} | Usuário: {item.username} | Senha: {item.temporary_password}"
+                    for item in accesses
+                ),
+                language=None,
+            )
+        else:
+            st.info("Todos os colaboradores ativos já possuem acesso.")
     search = st.text_input("Pesquisar por nome", key="employee_search")
     employees = get_employees(search=search)
     table = pd.DataFrame(

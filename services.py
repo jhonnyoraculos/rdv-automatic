@@ -37,9 +37,64 @@ from utils import (
 
 logger = logging.getLogger("rdv")
 _period_rollover_lock = Lock()
+_employee_seed_lock = Lock()
 AUTOMATIC_PERIOD_FIRST_START = date(2026, 9, 28)
 AUTOMATIC_PERIOD_DAYS = 13
 AUTOMATIC_PERIOD_CYCLE_DAYS = 14
+AUTOMATIC_PERIOD_ACTIVATION_LEAD_DAYS = 3
+
+DEFAULT_EMPLOYEES: tuple[tuple[str, EmployeeRole], ...] = (
+    ("ALDEMIR LUIZ DA SILVA", EmployeeRole.MOTORISTA),
+    ("ANDRE LUIZ", EmployeeRole.MOTORISTA),
+    ("ARMED JUNIOR", EmployeeRole.MOTORISTA),
+    ("CELSO ANTONIO CAETANO", EmployeeRole.MOTORISTA),
+    ("CRISTIANO CLEMENTINO OLIVEIRA", EmployeeRole.MOTORISTA),
+    ("DOUGLAS ALBERTINO GREGORIO", EmployeeRole.MOTORISTA),
+    ("DOUGLAS RODRIGUES DE OLIVEIRA", EmployeeRole.MOTORISTA),
+    ("FREDER HENRIQUE MOREIRA DE CARVALHO", EmployeeRole.MOTORISTA),
+    ("GABRIEL DE SOUSA", EmployeeRole.MOTORISTA),
+    ("GABRIEL FELIPE DE FARIA OLIVEIRA", EmployeeRole.MOTORISTA),
+    ("IAGO RAIMUNDO DIAS", EmployeeRole.MOTORISTA),
+    ("JOSE ABILDO DOMINGOS", EmployeeRole.MOTORISTA),
+    ("KAIO FERNANDO", EmployeeRole.MOTORISTA),
+    ("LUCAS APARECIDO ROQUE", EmployeeRole.MOTORISTA),
+    ("MARCOS PAULO PEREIRA RAMOS", EmployeeRole.MOTORISTA),
+    ("MATEUS SEVERINO DE SOUZA", EmployeeRole.MOTORISTA),
+    ("PEDRO AMARAL E SILVA", EmployeeRole.MOTORISTA),
+    ("RAIMUNDO ADRIANO DO ROSARIO REIS", EmployeeRole.MOTORISTA),
+    ("REGINALDO MOREIRA IÃO", EmployeeRole.MOTORISTA),
+    ("RICARDO DE OLIVEIRA SOUSA", EmployeeRole.MOTORISTA),
+    ("RONALDO PEREIRA CORDEIRO", EmployeeRole.MOTORISTA),
+    ("SIDNEY RAIMUNDO DA SILVA", EmployeeRole.MOTORISTA),
+    ("WESLEY LUCIO", EmployeeRole.MOTORISTA),
+    ("ROBERT JHONATHAN SILVA", EmployeeRole.MOTORISTA),
+    ("HIPOCRATES HERSCHEL PINTO", EmployeeRole.MOTORISTA),
+    ("DIEGO GERALDO BAZILIO", EmployeeRole.MOTORISTA),
+    ("ADEMILSON RODRIGUES DA SILVA", EmployeeRole.AJUDANTE),
+    ("AILTON SILVA DE SOUSA", EmployeeRole.AJUDANTE),
+    ("ALONSO FONSECA DE SOUSA FILHO", EmployeeRole.AJUDANTE),
+    ("BRUNO HENRIQUE MENDES", EmployeeRole.AJUDANTE),
+    ("CAIQUE LACERDA DOS SANTOS", EmployeeRole.AJUDANTE),
+    ("CHARLES COSTA SANTOS", EmployeeRole.AJUDANTE),
+    ("DEVIS PENA DE OLIVEIRA", EmployeeRole.AJUDANTE),
+    ("EDER SILVA", EmployeeRole.AJUDANTE),
+    ("EDUARDO ANDRADE SILVA", EmployeeRole.AJUDANTE),
+    ("EDUARDO FRANKLIN", EmployeeRole.AJUDANTE),
+    ("ELDERSON JOSE GOMES", EmployeeRole.AJUDANTE),
+    ("EMERSON FELIPE MACHADO", EmployeeRole.AJUDANTE),
+    ("FERNANDO EUSTAQUIO FERREIRA", EmployeeRole.AJUDANTE),
+    ("GABRIEL HENRIQUE DE SOUZA CARVALHO", EmployeeRole.AJUDANTE),
+    ("GUILHERME ALVES DIAS", EmployeeRole.AJUDANTE),
+    ("LEANDRO COELHO PIMENTEL", EmployeeRole.AJUDANTE),
+    ("MARCIO ANTONIO GARCIA", EmployeeRole.AJUDANTE),
+    ("MARCO VINICIO ALMEIDA VEIGA", EmployeeRole.AJUDANTE),
+    ("MARCOS HEITOR DA SILVA", EmployeeRole.AJUDANTE),
+    ("ORMIB GONÇALVES BORGES", EmployeeRole.AJUDANTE),
+    ("ROGERIO DAS NEVES MEDEIROS SANTOS", EmployeeRole.AJUDANTE),
+    ("TAUAN TEODORO GONÇALVES", EmployeeRole.AJUDANTE),
+    ("TIAGO PEREIRA DOS SANTOS", EmployeeRole.AJUDANTE),
+    ("WEVERSON FERREIRA DOS SANTOS", EmployeeRole.AJUDANTE),
+)
 
 
 class BusinessError(ValueError):
@@ -89,6 +144,59 @@ def _available_username(session: Any, name: str) -> str:
 def _temporary_password(length: int = 12) -> str:
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
     return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+def ensure_default_employees() -> int:
+    """Add the supplied workforce without duplicating existing employees."""
+    created = 0
+    timestamp = now_sp()
+    with _employee_seed_lock, session_scope() as session:
+        existing = {
+            employee.name.casefold(): employee
+            for employee in session.scalars(select(Employee))
+        }
+        for name, role in DEFAULT_EMPLOYEES:
+            employee = existing.get(name.casefold())
+            if employee:
+                if employee.role != role:
+                    employee.role = role
+                    employee.updated_at = timestamp
+                continue
+            employee = Employee(
+                name=name,
+                username=_available_username(session, name),
+                password_hash=None,
+                role=role,
+                active=True,
+                created_at=timestamp,
+                updated_at=timestamp,
+            )
+            session.add(employee)
+            session.flush()
+            existing[name.casefold()] = employee
+            created += 1
+    if created:
+        logger.info("Colaboradores iniciais adicionados: %s", created)
+    return created
+
+
+def generate_pending_employee_access() -> list[EmployeeAccess]:
+    generated: list[EmployeeAccess] = []
+    with session_scope() as session:
+        employees = session.scalars(
+            select(Employee)
+            .where(Employee.active.is_(True), Employee.password_hash.is_(None))
+            .order_by(Employee.name)
+        )
+        for employee in employees:
+            password = _temporary_password()
+            if not employee.username:
+                employee.username = _available_username(session, employee.name)
+            employee.password_hash = generate_password_hash(password)
+            employee.updated_at = now_sp()
+            generated.append(EmployeeAccess(employee, employee.username, password))
+        session.flush()
+    return generated
 
 
 def create_employee_with_access(
@@ -311,12 +419,17 @@ def get_active_period(reference_date: date | None = None) -> RdvPeriod | None:
             .where(RdvPeriod.active.is_(True))
             .order_by(RdvPeriod.created_at.desc())
         )
+        first_activation = AUTOMATIC_PERIOD_FIRST_START - timedelta(
+            days=AUTOMATIC_PERIOD_ACTIVATION_LEAD_DAYS
+        )
+        # The first period starts on its declared date. From the second period
+        # onward, rollover happens on the preceding Friday.
         if today < AUTOMATIC_PERIOD_FIRST_START:
             _ensure_automatic_period(session, AUTOMATIC_PERIOD_FIRST_START)
             return active
 
         period_index = (
-            today - AUTOMATIC_PERIOD_FIRST_START
+            today - first_activation
         ).days // AUTOMATIC_PERIOD_CYCLE_DAYS
         current = None
         # Keep the whole requested sequence visible and always schedule one ahead.
@@ -588,8 +701,8 @@ def approve_rdv(
     reviewer_username: str,
 ) -> RdvSubmission:
     role = str(getattr(reviewer_role, "value", reviewer_role)).upper()
-    if role not in {"ANALISTA", "GESTOR"}:
-        raise BusinessError("Perfil de aprovação inválido.")
+    if role != "ANALISTA":
+        raise BusinessError("Somente o analista de frota pode aprovar RDVs.")
     try:
         username = clean_text(
             reviewer_username, "Usuário responsável", 100, required=True
@@ -602,22 +715,18 @@ def approve_rdv(
         if not submission:
             raise BusinessError("RDV não encontrado.")
         timestamp = now_sp()
-        if role == "ANALISTA":
-            if submission.status != SubmissionStatus.ENVIADO:
-                raise BusinessError(
-                    "Este RDV não está aguardando a aprovação do analista."
-                )
-            submission.analyst_signed_at = timestamp
-            submission.analyst_username = username
-            submission.status = SubmissionStatus.AGUARDANDO_GESTOR
-        else:
-            if submission.status != SubmissionStatus.AGUARDANDO_GESTOR:
-                raise BusinessError(
-                    "Este RDV não está aguardando a aprovação do gestor."
-                )
-            submission.manager_signed_at = timestamp
-            submission.manager_username = username
-            submission.status = SubmissionStatus.APROVADO
+        if submission.status not in {
+            SubmissionStatus.ENVIADO,
+            SubmissionStatus.AGUARDANDO_GESTOR,
+        }:
+            raise BusinessError(
+                "Este RDV não está aguardando a aprovação do analista."
+            )
+        submission.analyst_signed_at = timestamp
+        submission.analyst_username = username
+        submission.manager_signed_at = None
+        submission.manager_username = None
+        submission.status = SubmissionStatus.APROVADO
         submission.reviewed_at = timestamp
         submission.admin_comment = None
         submission.updated_at = timestamp
@@ -631,17 +740,16 @@ def reject_rdv(
 ) -> RdvSubmission:
     reason = clean_text(reason, "Motivo", 1000, required=True)
     role = str(getattr(reviewer_role, "value", reviewer_role)).upper()
-    expected_status = {
-        "ANALISTA": SubmissionStatus.ENVIADO,
-        "GESTOR": SubmissionStatus.AGUARDANDO_GESTOR,
-    }.get(role)
-    if expected_status is None:
-        raise BusinessError("Perfil de aprovação inválido.")
+    if role != "ANALISTA":
+        raise BusinessError("Somente o analista de frota pode rejeitar RDVs.")
     with session_scope() as session:
         submission = session.get(RdvSubmission, submission_id)
         if not submission:
             raise BusinessError("RDV não encontrado.")
-        if submission.status != expected_status:
+        if submission.status not in {
+            SubmissionStatus.ENVIADO,
+            SubmissionStatus.AGUARDANDO_GESTOR,
+        }:
             raise BusinessError("Este RDV não está na sua etapa de aprovação.")
         submission.status = SubmissionStatus.REJEITADO
         submission.reviewed_at = now_sp()

@@ -14,8 +14,9 @@ from exports import (
     rdv_to_png,
     rdv_to_xlsx,
 )
-from models import BenefitType, EmployeeRole, SubmissionStatus
+from models import BenefitType, Employee, EmployeeRole, SubmissionStatus
 from services import (
+    DEFAULT_EMPLOYEES,
     BusinessError,
     approve_rdv,
     create_employee,
@@ -23,6 +24,7 @@ from services import (
     create_period,
     create_rdv,
     delete_rdv,
+    ensure_default_employees,
     get_active_period,
     get_rdv,
     reject_rdv,
@@ -205,43 +207,38 @@ def test_pdf_is_generated_with_physical_signature_lines() -> None:
     assert rdv_to_pdf(rdv).startswith(b"%PDF")
 
 
-def test_approval_follows_analyst_then_manager_workflow() -> None:
+def test_analyst_approval_concludes_the_rdv() -> None:
     employee = create_employee("Rui Teste", EmployeeRole.MOTORISTA)
     period = create_period(date(2026, 9, 1), date(2026, 9, 1), active=True)
     rdv = _create_test_rdv(
         employee.id, period.id, _entries(period.start_date, period.end_date)
     )
 
-    analyst_approved = approve_rdv(rdv.id, "ANALISTA", "analista")
-    assert analyst_approved.status == SubmissionStatus.AGUARDANDO_GESTOR
-    assert analyst_approved.analyst_signed_at
-    assert analyst_approved.analyst_username == "analista"
-
-    manager_approved = approve_rdv(rdv.id, "GESTOR", "gestor")
-    assert manager_approved.status == SubmissionStatus.APROVADO
-    assert manager_approved.manager_signed_at
-    assert manager_approved.manager_username == "gestor"
-    assert rdv_to_pdf(manager_approved).startswith(b"%PDF")
+    approved = approve_rdv(rdv.id, "ANALISTA", "analista")
+    assert approved.status == SubmissionStatus.APROVADO
+    assert approved.analyst_signed_at
+    assert approved.analyst_username == "analista"
+    assert approved.manager_signed_at is None
+    assert approved.manager_username is None
+    assert rdv_to_pdf(approved).startswith(b"%PDF")
 
 
-def test_manager_cannot_approve_before_analyst() -> None:
+def test_only_analyst_can_approve() -> None:
     employee = create_employee("Eva Teste", EmployeeRole.MOTORISTA)
     period = create_period(date(2026, 9, 1), date(2026, 9, 1), active=True)
     rdv = _create_test_rdv(
         employee.id, period.id, _entries(period.start_date, period.end_date)
     )
-    with pytest.raises(BusinessError, match="gestor"):
+    with pytest.raises(BusinessError, match="analista"):
         approve_rdv(rdv.id, "GESTOR", "gestor")
 
 
-def test_manager_rejection_restarts_the_approval_flow() -> None:
+def test_analyst_rejection_restarts_the_approval_flow() -> None:
     employee = create_employee("Leo Teste", EmployeeRole.MOTORISTA)
     period = create_period(date(2026, 9, 1), date(2026, 9, 1), active=True)
     entries = _entries(period.start_date, period.end_date)
     rdv = _create_test_rdv(employee.id, period.id, entries)
-    approve_rdv(rdv.id, "ANALISTA", "analista")
-
-    rejected = reject_rdv(rdv.id, "Corrigir cidade", "GESTOR")
+    rejected = reject_rdv(rdv.id, "Corrigir cidade", "ANALISTA")
     assert rejected.status == SubmissionStatus.REJEITADO
     corrected = _create_test_rdv(employee.id, period.id, entries)
     assert corrected.status == SubmissionStatus.ENVIADO
@@ -269,13 +266,29 @@ def test_automatic_period_sequence_uses_requested_anchor_and_interval() -> None:
     assert first and first.start_date == date(2026, 9, 28)
     assert first.end_date == date(2026, 10, 10)
 
-    gap = get_active_period(date(2026, 10, 11))
-    assert gap and gap.id == first.id
+    thursday = get_active_period(date(2026, 10, 8))
+    assert thursday and thursday.id == first.id
 
-    second = get_active_period(date(2026, 10, 12))
+    second = get_active_period(date(2026, 10, 9))
     assert second and second.start_date == date(2026, 10, 12)
     assert second.end_date == date(2026, 10, 24)
 
-    third = get_active_period(date(2026, 10, 26))
+    third = get_active_period(date(2026, 10, 23))
     assert third and third.start_date == date(2026, 10, 26)
     assert third.end_date == date(2026, 11, 7)
+
+
+def test_supplied_employees_are_seeded_once_with_their_roles() -> None:
+    assert ensure_default_employees() == len(DEFAULT_EMPLOYEES) == 50
+    assert ensure_default_employees() == 0
+
+    with database.session_scope() as session:
+        employees = list(session.query(Employee).order_by(Employee.name))
+
+    assert len(employees) == 50
+    assert sum(item.role == EmployeeRole.MOTORISTA for item in employees) == 26
+    assert sum(item.role == EmployeeRole.AJUDANTE for item in employees) == 24
+    assert all(item.password_hash is None for item in employees)
+    roles = {item.name: item.role for item in employees}
+    assert roles["ROBERT JHONATHAN SILVA"] == EmployeeRole.MOTORISTA
+    assert roles["MARCO VINICIO ALMEIDA VEIGA"] == EmployeeRole.AJUDANTE

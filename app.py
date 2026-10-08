@@ -6,6 +6,7 @@ import streamlit as st
 
 from auth import is_authenticated, is_employee_authenticated, restore_employee_login
 from database import init_db
+from services import ensure_default_employees
 from ui import apply_style
 
 st.set_page_config(
@@ -20,6 +21,7 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 init_db()
+ensure_default_employees()
 apply_style()
 restore_employee_login()
 

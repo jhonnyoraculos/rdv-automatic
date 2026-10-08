@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pandas as pd
 import streamlit as st
 
@@ -17,8 +19,12 @@ with create_tab:
     with st.form("create_period"):
         today = now_sp().date()
         date_cols = st.columns(2)
-        start_date = date_cols[0].date_input("Data inicial", value=today)
-        end_date = date_cols[1].date_input("Data final", value=today)
+        start_date = date_cols[0].date_input(
+            "Data inicial", value=today, format="DD/MM/YYYY"
+        )
+        end_date = date_cols[1].date_input(
+            "Data final", value=today + timedelta(days=12), format="DD/MM/YYYY"
+        )
         description = st.text_input(
             "Descrição (opcional)",
             max_chars=150,
@@ -77,9 +83,11 @@ with edit_tab:
         with st.form(f"edit_period_{selected.id}"):
             date_cols = st.columns(2)
             edited_start = date_cols[0].date_input(
-                "Data inicial", value=selected.start_date
+                "Data inicial", value=selected.start_date, format="DD/MM/YYYY"
             )
-            edited_end = date_cols[1].date_input("Data final", value=selected.end_date)
+            edited_end = date_cols[1].date_input(
+                "Data final", value=selected.end_date, format="DD/MM/YYYY"
+            )
             edited_description = st.text_input(
                 "Descrição", value=selected.description, max_chars=150
             )
@@ -100,5 +108,6 @@ with edit_tab:
                 st.error(str(exc))
 st.info(
     "A sequência automática começa em 28/09/2026 a 10/10/2026. Cada período tem "
-    "13 dias corridos e um dia de intervalo; o período seguinte é ativado na data inicial."
+    "13 dias corridos. Na sexta-feira anterior, o próximo período é ativado e o "
+    "domingo fica fora da quinzena. Ex.: em 09/10 passa a valer 12/10/2026 a 24/10/2026."
 )

@@ -74,7 +74,7 @@ APP_CSS = """
     }
     .status { display:inline-block; padding:4px 9px; border-radius:99px; font-size:.78rem; font-weight:800; }
     .status-enviado { background:#fff1cc; color:#8a5b00; }
-    .status-aguardando_gestor { background:#dcecff; color:#154f8b; }
+    .status-aguardando_gestor { background:#fff1cc; color:#8a5b00; }
     .status-aprovado { background:#dff6e8; color:#116b39; }
     .status-rejeitado { background:#fde2e5; color:#a11427; }
     @media (max-width: 640px) {
@@ -92,6 +92,12 @@ APP_CSS = """
         }
         div[data-testid="stAlert"] { padding:.75rem 1rem; }
         div[data-testid="stWidgetLabel"] p { font-size:17px !important; line-height:1.35; }
+        div[data-testid="stTextInputRootElement"],
+        div[data-testid="stNumberInputContainer"],
+        div[data-testid="stSelectbox"] div[role="group"] { min-height:54px; }
+        div[data-testid="stTextInputRootElement"] input,
+        div[data-testid="stNumberInputContainer"] input,
+        div[data-testid="stSelectbox"] input { font-size:18px !important; }
         div[data-baseweb="input"] { min-height:54px; }
         div[data-baseweb="input"] input,
         div[data-baseweb="textarea"] textarea,
@@ -102,6 +108,15 @@ APP_CSS = """
         div[data-testid="stExpander"] summary p { font-size:17px !important; }
         .rdv-review-grid { grid-template-columns:1fr; }
         div[data-testid="stMetric"] { width:100%; }
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
+            gap:.6rem;
+        }
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"])
+        > div[data-testid="stColumn"] {
+            min-width:calc(50% - .3rem) !important;
+            width:calc(50% - .3rem) !important;
+            flex:1 1 calc(50% - .3rem) !important;
+        }
         div[data-baseweb="select"], div[data-baseweb="input"] { max-width:100%; }
         iframe, img { max-width:100%; }
     }
@@ -151,7 +166,7 @@ def submission_status_label(status: object) -> str:
     value = str(getattr(status, "value", status))
     return {
         "ENVIADO": "AGUARDANDO ANALISTA",
-        "AGUARDANDO_GESTOR": "AGUARDANDO GESTOR",
+        "AGUARDANDO_GESTOR": "AGUARDANDO ANALISTA",
         "APROVADO": "CONCLUÍDO",
         "REJEITADO": "REJEITADO",
     }.get(value, value)

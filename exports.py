@@ -223,8 +223,8 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
         location_date,
     )
     signature_y = 60
-    labels = ["ASSINATURA DO COLABORADOR", "ANALISTA DE FROTA", "GESTOR DE FROTA"]
-    signature_width = (table_width - 30) / 3
+    labels = ["ASSINATURA DO COLABORADOR", "ANALISTA DE FROTA"]
+    signature_width = (table_width - 15) / 2
     for index, label in enumerate(labels):
         start = margin + index * (signature_width + 15)
         canvas.drawCentredString(start + signature_width / 2, signature_y + 48, label)
