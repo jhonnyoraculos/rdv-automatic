@@ -10,6 +10,7 @@ from auth import (
 )
 from exports import pdf_to_png, rdv_to_csv, rdv_to_pdf, rdv_to_xlsx, rdvs_to_xlsx
 from models import EmployeeRole, SubmissionStatus
+from print_document import print_pdf_button
 from services import (
     BusinessError,
     approve_rdv,
@@ -228,6 +229,12 @@ with details_right:
 
 pdf_data = rdv_to_pdf(rdv)
 png_data = pdf_to_png(pdf_data)
+if rdv.status == SubmissionStatus.APROVADO:
+    st.success("RDV concluído e pronto para impressão.")
+    print_pdf_button(
+        pdf_data,
+        key=f"print_approved_rdv_{rdv.id}_{rdv.updated_at}",
+    )
 st.subheader("Folha do RDV para conferência")
 mobile_tab, pdf_tab = st.tabs(["Visualização para celular", "Visualização em PDF"])
 with mobile_tab:
@@ -272,18 +279,13 @@ can_review = admin_role == AdminRole.ANALISTA and rdv.status in (
 if can_review:
     st.subheader(f"Aprovação — {role_label}")
     action_cols = st.columns(2)
+    confirm_key = f"confirm_approval_{rdv.id}"
     if action_cols[0].button(
         "APROVAR RDV",
         type="primary",
         use_container_width=True,
     ):
-        try:
-            approve_rdv(rdv.id, admin_role.value, admin_username)
-            st.session_state["opened_rdv_id"] = rdv.id
-            st.success("RDV aprovado pelo analista e concluído.")
-            st.rerun()
-        except BusinessError as exc:
-            st.error(str(exc))
+        st.session_state[confirm_key] = True
     with action_cols[1]:
         with st.form(f"reject_{rdv.id}_{admin_role.value}"):
             reason = st.text_area("Motivo obrigatório para rejeitar", max_chars=1000)
@@ -295,6 +297,33 @@ if can_review:
                 st.rerun()
             except BusinessError as exc:
                 st.error(str(exc))
+    if st.session_state.get(confirm_key):
+        st.warning("Confirma a aprovação e a conclusão deste RDV?")
+        confirm_cols = st.columns(2)
+        if confirm_cols[0].button(
+            "SIM, APROVAR E ABRIR IMPRESSÃO",
+            type="primary",
+            use_container_width=True,
+            key=f"approve_confirmed_{rdv.id}",
+        ):
+            try:
+                approve_rdv(rdv.id, admin_role.value, admin_username)
+                st.session_state.pop(confirm_key, None)
+                st.session_state["opened_rdv_id"] = rdv.id
+                st.session_state["dashboard_notice"] = (
+                    "RDV aprovado pelo analista e concluído. "
+                    "Use a opção de impressão abaixo."
+                )
+                st.rerun()
+            except BusinessError as exc:
+                st.error(str(exc))
+        if confirm_cols[1].button(
+            "CANCELAR",
+            use_container_width=True,
+            key=f"cancel_approval_{rdv.id}",
+        ):
+            st.session_state.pop(confirm_key, None)
+            st.rerun()
 elif rdv.status in (
     SubmissionStatus.ENVIADO,
     SubmissionStatus.AGUARDANDO_GESTOR,

@@ -9,6 +9,7 @@ import auth
 import database
 from database import Base
 from exports import (
+    PHYSICAL_SIGNATURE_LABELS,
     rdv_to_csv,
     rdv_to_pdf,
     rdv_to_png,
@@ -205,6 +206,11 @@ def test_pdf_is_generated_with_physical_signature_lines() -> None:
     )
 
     assert rdv_to_pdf(rdv).startswith(b"%PDF")
+    assert PHYSICAL_SIGNATURE_LABELS == (
+        "ASSINATURA DO COLABORADOR",
+        "ANALISTA DE FROTA",
+        "GESTOR DE FROTA",
+    )
 
 
 def test_analyst_approval_concludes_the_rdv() -> None:

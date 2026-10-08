@@ -17,6 +17,12 @@ from utils import (
     protocol,
 )
 
+PHYSICAL_SIGNATURE_LABELS = (
+    "ASSINATURA DO COLABORADOR",
+    "ANALISTA DE FROTA",
+    "GESTOR DE FROTA",
+)
+
 
 def _entry_rows(rdv: RdvSubmission) -> list[list[object]]:
     return [
@@ -223,9 +229,8 @@ def rdv_to_pdf(rdv: RdvSubmission) -> bytes:
         location_date,
     )
     signature_y = 60
-    labels = ["ASSINATURA DO COLABORADOR", "ANALISTA DE FROTA"]
-    signature_width = (table_width - 15) / 2
-    for index, label in enumerate(labels):
+    signature_width = (table_width - 30) / 3
+    for index, label in enumerate(PHYSICAL_SIGNATURE_LABELS):
         start = margin + index * (signature_width + 15)
         canvas.drawCentredString(start + signature_width / 2, signature_y + 48, label)
         canvas.line(start, signature_y, start + signature_width, signature_y)
