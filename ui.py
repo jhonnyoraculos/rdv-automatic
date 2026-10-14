@@ -34,14 +34,6 @@ APP_CSS = """
     .jr-header h1 { margin:0; font-size:1.5rem; }
     .jr-header p { margin:3px 0 0; color:#667085; }
     .info-strip { background:#eef3f9; border-left:4px solid var(--jr-blue); padding:12px 15px; border-radius:8px; }
-    .rdv-review-grid {
-        display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px;
-    }
-    .rdv-review-card {
-        display:grid; gap:4px; min-width:0; padding:12px 14px; background:white;
-        border:1px solid #e2e7ee; border-radius:12px; overflow-wrap:anywhere;
-    }
-    .rdv-review-card strong { color:var(--jr-blue); font-size:1rem; }
     div[data-testid="stTextInputRootElement"],
     div[data-testid="stNumberInputContainer"],
     div[data-testid="stSelectbox"] div[role="group"],
@@ -73,6 +65,7 @@ APP_CSS = """
         color:var(--ink) !important;
     }
     .status { display:inline-block; padding:4px 9px; border-radius:99px; font-size:.78rem; font-weight:800; }
+    .status-rascunho { background:#e8edf5; color:#42526b; }
     .status-enviado { background:#fff1cc; color:#8a5b00; }
     .status-aguardando_gestor { background:#fff1cc; color:#8a5b00; }
     .status-aprovado { background:#dff6e8; color:#116b39; }
@@ -106,7 +99,6 @@ APP_CSS = """
         div[role="radiogroup"] label p,
         div[data-testid="stCheckbox"] label p { font-size:17px !important; }
         div[data-testid="stExpander"] summary p { font-size:17px !important; }
-        .rdv-review-grid { grid-template-columns:1fr; }
         div[data-testid="stMetric"] { width:100%; }
         div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
             gap:.6rem;
@@ -165,6 +157,7 @@ def status_badge(status: str) -> None:
 def submission_status_label(status: object) -> str:
     value = str(getattr(status, "value", status))
     return {
+        "RASCUNHO": "RASCUNHO",
         "ENVIADO": "AGUARDANDO ANALISTA",
         "AGUARDANDO_GESTOR": "AGUARDANDO ANALISTA",
         "APROVADO": "CONCLUÍDO",

@@ -31,6 +31,7 @@ class EmployeeRole(str, Enum):
 
 
 class SubmissionStatus(str, Enum):
+    RASCUNHO = "RASCUNHO"
     ENVIADO = "ENVIADO"
     AGUARDANDO_GESTOR = "AGUARDANDO_GESTOR"
     APROVADO = "APROVADO"

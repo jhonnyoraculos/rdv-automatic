@@ -112,12 +112,12 @@ def _browser_employee_token() -> str:
         return ""
 
 
-def restore_employee_login() -> bool:
+def restore_employee_login(browser_token: str = "") -> bool:
     if is_authenticated() or is_employee_authenticated():
         return is_employee_authenticated()
     if st.session_state.get("clear_persistent_employee_cookie"):
         return False
-    token = _browser_employee_token()
+    token = browser_token.strip() or _browser_employee_token()
     if not token:
         return False
     with session_scope() as session:

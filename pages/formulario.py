@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from html import escape
+from types import SimpleNamespace
 
 import streamlit as st
 
@@ -14,6 +15,7 @@ from services import (
     get_active_period,
     get_employee,
     get_submission_for_employee_period,
+    save_rdv_draft,
 )
 from ui import company_header, require_employee
 from utils import (
@@ -22,6 +24,7 @@ from utils import (
     date_range,
     format_brl,
     format_date,
+    format_datetime,
     money,
     protocol,
 )
@@ -142,8 +145,15 @@ if st.session_state.get("rdv_context") != context:
         st.session_state[f"benefit_value_{suffix}"] = (
             float(saved.benefit_amount) if saved else 0.0
         )
+        st.session_state[f"benefit_previous_{suffix}"] = (
+            saved.benefit_type.value if saved else BenefitType.NONE.value
+        )
 
-if existing and existing.status == SubmissionStatus.REJEITADO:
+if (
+    existing
+    and existing.admin_comment
+    and existing.status in {SubmissionStatus.RASCUNHO, SubmissionStatus.REJEITADO}
+):
     st.warning(
         f"Este RDV foi devolvido para correção. Motivo: {existing.admin_comment}"
     )
@@ -179,7 +189,15 @@ st.subheader("Lançamentos do período")
 st.caption("Abra cada data para informar cidade e despesas. Domingos estão destacados.")
 entries: list[dict[str, object]] = []
 benefit_options = [item.value for item in BenefitType]
-benefit_labels = {"NONE": "Nenhum", "DIARIA": "Diária", "TICKET": "Ticket"}
+benefit_option_labels = {
+    "NONE": "Nenhum",
+    "DIARIA": "Diária — R$ 100,00",
+    "TICKET": "Ticket — R$ 32,00",
+}
+benefit_default_values = {
+    BenefitType.DIARIA.value: 100.0,
+    BenefitType.TICKET.value: 32.0,
+}
 for day in date_range(period.start_date, period.end_date):
     suffix = f"{context}_{day:%Y_%m_%d}"
     sunday = day.weekday() == 6
@@ -209,17 +227,24 @@ for day in date_range(period.start_date, period.end_date):
             benefit_type = st.selectbox(
                 "Tipo da despesa",
                 benefit_options,
-                format_func=lambda value: benefit_labels[value],
+                format_func=lambda value: benefit_option_labels[value],
                 key=f"benefit_{suffix}",
             )
         with value_col:
+            benefit_value_key = f"benefit_value_{suffix}"
+            previous_type_key = f"benefit_previous_{suffix}"
+            if st.session_state[previous_type_key] != benefit_type:
+                st.session_state[benefit_value_key] = benefit_default_values.get(
+                    benefit_type, 0.0
+                )
+                st.session_state[previous_type_key] = benefit_type
             if benefit_type != BenefitType.NONE.value:
                 benefit_amount = st.number_input(
                     "Valor (R$)",
                     min_value=0.0,
                     step=0.01,
                     format="%.2f",
-                    key=f"benefit_value_{suffix}",
+                    key=benefit_value_key,
                 )
             else:
                 benefit_amount = 0.0
@@ -233,6 +258,14 @@ for day in date_range(period.start_date, period.end_date):
                 "benefit_amount": money(benefit_amount),
             }
         )
+
+st.subheader("Local do preenchimento")
+location = st.text_input(
+    "Cidade/UF",
+    max_chars=80,
+    placeholder="Ex.: Divinópolis/MG",
+    key=f"location_{context}",
+)
 
 totals = calculate_rdv_totals(entries, advance_value)
 st.subheader("Resumo do RDV")
@@ -250,36 +283,109 @@ st.caption(
     "O total da quinzena considera somente diárias e tickets. Hotéis e adiantamento não entram no cálculo."
 )
 
-st.subheader("Revisão")
-review_cards = []
-for entry in entries:
-    hotel_text = ""
-    if employee.role == EmployeeRole.AJUDANTE:
-        hotel_text = (
-            f'<span><b>Hotel:</b> {escape(str(entry["hotel_name"] or "—"))}</span>'
-            f'<span><b>Valor hotel:</b> {escape(format_brl(entry["hotel_amount"]))}</span>'
-        )
-    review_cards.append(
-        '<div class="rdv-review-card">'
-        f'<strong>{escape(format_date(entry["date"]))}</strong>'
-        f'<span><b>Cidade:</b> {escape(str(entry["city"] or "—"))}</span>'
-        f'{hotel_text}'
-        f'<span><b>Despesa:</b> {escape(benefit_labels[str(entry["benefit_type"])])}</span>'
-        f'<span><b>Valor:</b> {escape(format_brl(entry["benefit_amount"]))}</span>'
-        '</div>'
+st.subheader("Prévia da folha")
+st.caption(
+    "Esta é a folha como está ficando. Ela é atualizada conforme você preenche os campos."
+)
+preview_entries = [
+    SimpleNamespace(
+        date=entry["date"],
+        city=entry["city"],
+        hotel_name=entry["hotel_name"],
+        hotel_amount=entry["hotel_amount"],
+        benefit_type=BenefitType(str(entry["benefit_type"])),
+        benefit_amount=entry["benefit_amount"],
     )
-st.markdown(
-    '<div class="rdv-review-grid">' + "".join(review_cards) + "</div>",
-    unsafe_allow_html=True,
+    for entry in entries
+]
+preview_rdv = SimpleNamespace(
+    id=existing.id if existing else 0,
+    employee=employee,
+    period=period,
+    advance_received=advance_answer == "Sim",
+    advance_amount=money(advance_value),
+    entries=preview_entries,
+    location=location.strip().upper(),
 )
+preview_png = pdf_to_png(rdv_to_pdf(preview_rdv), scale=1.5)
+st.image(preview_png, use_container_width=True)
 
-st.subheader("Local do preenchimento")
-location = st.text_input(
-    "Cidade/UF",
-    max_chars=80,
-    placeholder="Ex.: Divinópolis/MG",
-    key=f"location_{context}",
+# Streamlit reruns this page after a widget is committed (for text fields, on
+# Enter or when focus leaves the field). Compare the current payload with the
+# previous render so normal reruns do not generate unnecessary database writes.
+draft_fingerprint = (
+    advance_answer == "Sim",
+    str(money(advance_value)),
+    location.strip(),
+    tuple(
+        (
+            entry["date"].isoformat(),
+            str(entry["city"]),
+            str(entry["hotel_name"]),
+            str(entry["hotel_amount"]),
+            str(entry["benefit_type"]),
+            str(entry["benefit_amount"]),
+        )
+        for entry in entries
+    ),
 )
+fingerprint_key = f"rdv_draft_fingerprint_{context}"
+saved_at_key = f"rdv_draft_saved_at_{context}"
+if fingerprint_key not in st.session_state:
+    st.session_state[fingerprint_key] = draft_fingerprint
+    if existing and existing.status == SubmissionStatus.RASCUNHO:
+        st.session_state[saved_at_key] = existing.updated_at
+elif st.session_state[fingerprint_key] != draft_fingerprint:
+    has_draft_data = (
+        advance_answer == "Sim"
+        or bool(location.strip())
+        or any(
+            entry["city"]
+            or entry["hotel_name"]
+            or entry["hotel_amount"]
+            or entry["benefit_type"] != BenefitType.NONE.value
+            or entry["benefit_amount"]
+            for entry in entries
+        )
+    )
+    can_update_existing = bool(
+        existing
+        and existing.status
+        in {SubmissionStatus.RASCUNHO, SubmissionStatus.REJEITADO}
+    )
+    if has_draft_data or can_update_existing:
+        try:
+            draft = save_rdv_draft(
+                employee.id,
+                period.id,
+                advance_answer == "Sim",
+                advance_value,
+                entries,
+                location,
+            )
+            st.session_state[fingerprint_key] = draft_fingerprint
+            st.session_state[saved_at_key] = draft.updated_at
+        except BusinessError as exc:
+            st.warning(f"Não foi possível salvar o rascunho: {exc}")
+        except Exception:
+            logger.exception("Falha inesperada ao salvar rascunho RDV")
+            st.warning(
+                "Não foi possível salvar o rascunho agora. "
+                "Seus dados continuam nesta tela; tente novamente."
+            )
+    else:
+        st.session_state[fingerprint_key] = draft_fingerprint
+
+if saved_at := st.session_state.get(saved_at_key):
+    st.success(
+        f"Rascunho salvo automaticamente às {format_datetime(saved_at)[-5:]}. "
+        "Você pode sair e continuar depois."
+    )
+else:
+    st.caption(
+        "Suas alterações serão salvas automaticamente. O RDV só será enviado "
+        "ao analista quando você confirmar o envio no final."
+    )
 
 confirmed = st.checkbox(
     "Confirmo que revisei as informações e que os valores informados estão corretos.",

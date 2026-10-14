@@ -25,12 +25,16 @@ from services import (
     create_employee_with_access,
     create_period,
     create_rdv,
+    dashboard_stats,
     delete_rdv,
     ensure_default_employees,
     get_active_period,
     get_rdv,
+    get_rdvs,
+    get_submission_for_employee_period,
     reject_rdv,
     reset_employee_password,
+    save_rdv_draft,
 )
 from utils import date_range
 
@@ -99,7 +103,7 @@ def test_employee_login_is_restored_from_persistent_token(monkeypatch) -> None:
         "context",
         SimpleNamespace(cookies={"rdv_employee_session": token}),
     )
-    assert auth.restore_employee_login()
+    assert auth.restore_employee_login(token)
     assert reopened_session["employee_id"] == access.employee.id
     assert auth.current_employee_id() == access.employee.id
 
@@ -143,6 +147,67 @@ def test_create_reject_and_resubmit_same_protocol() -> None:
     assert corrected.id == first.id
     assert corrected.status == SubmissionStatus.ENVIADO
     assert len(corrected.entries) == 3
+
+
+def test_partial_draft_is_saved_resumed_and_hidden_from_admin() -> None:
+    employee = create_employee("Rascunho Teste", EmployeeRole.MOTORISTA)
+    period = create_period(date(2026, 9, 1), date(2026, 9, 3), active=True)
+    entries = _entries(period.start_date, period.end_date)
+    entries[0]["city"] = ""
+    entries[0]["benefit_amount"] = 0
+
+    draft = save_rdv_draft(
+        employee.id,
+        period.id,
+        True,
+        0,
+        entries,
+        "",
+    )
+
+    assert draft.status == SubmissionStatus.RASCUNHO
+    assert draft.location == ""
+    assert draft.advance_amount == 0
+    assert get_rdvs() == []
+    assert dashboard_stats()["total"] == 0
+    resumed = get_submission_for_employee_period(employee.id, period.id)
+    assert resumed and resumed.id == draft.id
+    assert len(resumed.entries) == 3
+
+
+def test_draft_updates_same_record_and_only_locks_after_submission() -> None:
+    employee = create_employee("Envio de Rascunho", EmployeeRole.MOTORISTA)
+    period = create_period(date(2026, 9, 1), date(2026, 9, 2), active=True)
+    partial = _entries(period.start_date, period.end_date)
+    partial[0]["benefit_amount"] = 0
+    first = save_rdv_draft(
+        employee.id, period.id, False, 0, partial, "Divinópolis/MG"
+    )
+
+    partial[0]["city"] = "Itaúna"
+    second = save_rdv_draft(
+        employee.id, period.id, False, 0, partial, "Divinópolis/MG"
+    )
+    assert second.id == first.id
+    assert second.status == SubmissionStatus.RASCUNHO
+
+    final_entries = _entries(period.start_date, period.end_date)
+    sent = create_rdv(
+        employee.id,
+        period.id,
+        False,
+        0,
+        final_entries,
+        "Divinópolis/MG",
+    )
+    assert sent.id == first.id
+    assert sent.status == SubmissionStatus.ENVIADO
+    assert len(get_rdvs()) == 1
+
+    with pytest.raises(BusinessError, match="não pode mais ser alterado"):
+        save_rdv_draft(
+            employee.id, period.id, False, 0, partial, "Divinópolis/MG"
+        )
 
 
 def test_individual_exports_are_generated() -> None:

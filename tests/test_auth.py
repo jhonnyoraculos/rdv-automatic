@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import auth
 import browser_session
 from auth import (
@@ -23,8 +25,25 @@ def test_employee_cookie_triggers_streamlit_without_reloading_browser(
     assert mounted["data"]["action"] == "save"
     assert mounted["data"]["value"] == "temporary-token"
     assert callable(mounted["on_completed_change"])
+    assert callable(mounted["on_token_change"])
     assert "window.location.reload" not in browser_session.COOKIE_JS
     assert 'setTriggerValue("completed"' in browser_session.COOKIE_JS
+    assert 'setStateValue("token"' in browser_session.COOKIE_JS
+    assert "localStorage" in browser_session.COOKIE_JS
+
+
+def test_employee_token_is_loaded_from_browser_storage(monkeypatch) -> None:
+    mounted = {}
+
+    def mount(**kwargs):
+        mounted.update(kwargs)
+        return SimpleNamespace(token="saved-browser-token")
+
+    monkeypatch.setattr(browser_session, "_cookie_control", mount)
+
+    assert browser_session.load_employee_browser_token() == "saved-browser-token"
+    assert mounted["data"]["action"] == "read"
+    assert mounted["key"] == "read_employee_cookie"
 
 
 def test_legacy_password_creates_analyst_and_manager_accounts(monkeypatch) -> None:

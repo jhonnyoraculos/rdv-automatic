@@ -96,7 +96,10 @@ with st.expander("Filtros", expanded=False):
         [None, *EmployeeRole],
         format_func=lambda x: "Todas" if x is None else x.value,
     )
-    status_options = [None, *SubmissionStatus]
+    status_options = [
+        None,
+        *[status for status in SubmissionStatus if status != SubmissionStatus.RASCUNHO],
+    ]
     status_filter = filter_cols[2].selectbox(
         "Status",
         status_options,

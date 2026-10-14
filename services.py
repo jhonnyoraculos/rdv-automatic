@@ -461,15 +461,17 @@ def get_period(period_id: int) -> RdvPeriod | None:
         return session.get(RdvPeriod, period_id)
 
 
-def validate_rdv_payload(
+def _validate_rdv_payload(
     employee: Employee,
     period: RdvPeriod,
     advance_received: bool,
     advance_amount: Any,
     entries: Iterable[dict[str, Any]],
+    *,
+    final: bool,
 ) -> tuple[Decimal, list[dict[str, Any]]]:
     advance = money(advance_amount, "Valor do adiantamento")
-    if advance_received and advance <= 0:
+    if final and advance_received and advance <= 0:
         raise BusinessError("Informe um adiantamento maior que zero.")
     if not advance_received and advance != 0:
         raise BusinessError(
@@ -500,7 +502,7 @@ def validate_rdv_payload(
             raise BusinessError(
                 "Motoristas não podem lançar despesas de hotel neste formulário."
             )
-        if not hotel_name and hotel_amount != 0:
+        if final and not hotel_name and hotel_amount != 0:
             raise BusinessError(
                 f"Informe o hotel referente ao valor lançado em {entry_date:%d/%m/%Y}."
             )
@@ -508,7 +510,7 @@ def validate_rdv_payload(
             raise BusinessError(
                 f"O valor deve ser zero quando o tipo é Nenhum em {entry_date:%d/%m/%Y}."
             )
-        if benefit_type != BenefitType.NONE and benefit_amount <= 0:
+        if final and benefit_type != BenefitType.NONE and benefit_amount <= 0:
             raise BusinessError(f"Informe o valor da despesa de {entry_date:%d/%m/%Y}.")
         normalized.append(
             {
@@ -526,6 +528,115 @@ def validate_rdv_payload(
             "O relatório deve conter exatamente todas as datas do período."
         )
     return advance, normalized
+
+
+def validate_rdv_payload(
+    employee: Employee,
+    period: RdvPeriod,
+    advance_received: bool,
+    advance_amount: Any,
+    entries: Iterable[dict[str, Any]],
+) -> tuple[Decimal, list[dict[str, Any]]]:
+    return _validate_rdv_payload(
+        employee,
+        period,
+        advance_received,
+        advance_amount,
+        entries,
+        final=True,
+    )
+
+
+def save_rdv_draft(
+    employee_id: int,
+    period_id: int,
+    advance_received: bool,
+    advance_amount: Any,
+    entries: Iterable[dict[str, Any]],
+    location: str,
+) -> RdvSubmission:
+    """Persist a partial RDV without making it available for approval."""
+    try:
+        try:
+            normalized_location = clean_text(location, "Local", 80).upper()
+        except ValueError as exc:
+            raise BusinessError(str(exc)) from exc
+
+        with session_scope() as session:
+            employee = session.get(Employee, employee_id)
+            period = session.get(RdvPeriod, period_id)
+            if not employee or not employee.active:
+                raise BusinessError("Colaborador não encontrado ou inativo.")
+            if not period:
+                raise BusinessError("Período não encontrado.")
+            advance, normalized = _validate_rdv_payload(
+                employee,
+                period,
+                advance_received,
+                advance_amount,
+                entries,
+                final=False,
+            )
+            existing = session.scalar(
+                select(RdvSubmission)
+                .options(selectinload(RdvSubmission.entries))
+                .where(
+                    RdvSubmission.employee_id == employee_id,
+                    RdvSubmission.period_id == period_id,
+                )
+            )
+            if existing and existing.status not in {
+                SubmissionStatus.RASCUNHO,
+                SubmissionStatus.REJEITADO,
+            }:
+                raise BusinessError(
+                    "Este RDV já foi enviado e não pode mais ser alterado."
+                )
+
+            timestamp = now_sp()
+            if existing:
+                submission = existing
+                submission.entries.clear()
+                session.flush()
+                submission.advance_received = bool(advance_received)
+                submission.advance_amount = advance
+                submission.location = normalized_location
+                submission.status = SubmissionStatus.RASCUNHO
+                submission.updated_at = timestamp
+            else:
+                submission = RdvSubmission(
+                    employee_id=employee_id,
+                    period_id=period_id,
+                    advance_received=bool(advance_received),
+                    advance_amount=advance,
+                    location=normalized_location,
+                    status=SubmissionStatus.RASCUNHO,
+                    # The column is required by legacy databases. It is replaced
+                    # with the actual submission time on the definitive send.
+                    submitted_at=timestamp,
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                )
+                session.add(submission)
+                session.flush()
+            for item in normalized:
+                submission.entries.append(RdvEntry(**item, created_at=timestamp))
+            session.flush()
+            submission_id = submission.id
+            logger.info(
+                "Rascunho RDV salvo: id=%s colaborador=%s período=%s",
+                submission_id,
+                employee_id,
+                period_id,
+            )
+        loaded = get_rdv(submission_id)
+        if not loaded:
+            raise RuntimeError("Falha ao recuperar o rascunho salvo.")
+        return loaded
+    except IntegrityError as exc:
+        raise BusinessError(
+            "Não foi possível salvar o rascunho. Atualize a página e tente novamente."
+        ) from exc
 
 
 def create_rdv(
@@ -563,7 +674,10 @@ def create_rdv(
                 )
             )
             timestamp = now_sp()
-            if existing and existing.status != SubmissionStatus.REJEITADO:
+            if existing and existing.status not in {
+                SubmissionStatus.RASCUNHO,
+                SubmissionStatus.REJEITADO,
+            }:
                 raise BusinessError(
                     "Já existe um RDV enviado para este colaborador neste período."
                 )
@@ -677,6 +791,10 @@ def get_rdvs(
             statement = statement.where(
                 RdvSubmission.status
                 == SubmissionStatus(str(getattr(status, "value", status)))
+            )
+        else:
+            statement = statement.where(
+                RdvSubmission.status != SubmissionStatus.RASCUNHO
             )
         if search.strip():
             statement = statement.where(Employee.name.ilike(f"%{search.strip()}%"))
