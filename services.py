@@ -22,6 +22,7 @@ from models import (
     Employee,
     EmployeeRole,
     EmployeeSession,
+    ExpenseSettings,
     RdvEntry,
     RdvPeriod,
     RdvSubmission,
@@ -42,6 +43,8 @@ AUTOMATIC_PERIOD_FIRST_START = date(2026, 9, 28)
 AUTOMATIC_PERIOD_DAYS = 13
 AUTOMATIC_PERIOD_CYCLE_DAYS = 14
 AUTOMATIC_PERIOD_ACTIVATION_LEAD_DAYS = 3
+DEFAULT_DAILY_AMOUNT = Decimal("100.00")
+DEFAULT_TICKET_AMOUNT = Decimal("32.00")
 
 DEFAULT_EMPLOYEES: tuple[tuple[str, EmployeeRole], ...] = (
     ("ALDEMIR LUIZ DA SILVA", EmployeeRole.MOTORISTA),
@@ -302,6 +305,58 @@ def get_active_employees() -> list[Employee]:
     return get_employees(active_only=True)
 
 
+def _get_or_create_expense_settings(session: Any) -> ExpenseSettings:
+    settings = session.get(ExpenseSettings, 1)
+    if settings:
+        return settings
+    settings = ExpenseSettings(
+        id=1,
+        daily_amount=DEFAULT_DAILY_AMOUNT,
+        ticket_amount=DEFAULT_TICKET_AMOUNT,
+        updated_at=now_sp(),
+        updated_by="sistema",
+    )
+    session.add(settings)
+    session.flush()
+    return settings
+
+
+def get_expense_settings() -> ExpenseSettings:
+    with session_scope() as session:
+        return _get_or_create_expense_settings(session)
+
+
+def update_expense_settings(
+    daily_amount: Any, ticket_amount: Any, updated_by: str
+) -> ExpenseSettings:
+    daily = money(daily_amount, "Valor da diária")
+    ticket = money(ticket_amount, "Valor do ticket")
+    if daily <= 0:
+        raise BusinessError("O valor da diária deve ser maior que zero.")
+    if ticket <= 0:
+        raise BusinessError("O valor do ticket deve ser maior que zero.")
+    try:
+        username = clean_text(
+            updated_by, "Usuário responsável", 100, required=True
+        )
+    except ValueError as exc:
+        raise BusinessError(str(exc)) from exc
+    with session_scope() as session:
+        settings = _get_or_create_expense_settings(session)
+        settings.daily_amount = daily
+        settings.ticket_amount = ticket
+        settings.updated_at = now_sp()
+        settings.updated_by = username
+        session.flush()
+        logger.info(
+            "Valores fixos atualizados por %s: diária=%s ticket=%s",
+            username,
+            daily,
+            ticket,
+        )
+        return settings
+
+
 def _deactivate_periods(session: Any, except_id: int | None = None) -> None:
     statement = select(RdvPeriod).where(RdvPeriod.active.is_(True))
     if except_id is not None:
@@ -469,6 +524,7 @@ def _validate_rdv_payload(
     entries: Iterable[dict[str, Any]],
     *,
     final: bool,
+    fixed_benefit_amounts: dict[BenefitType, Decimal] | None = None,
 ) -> tuple[Decimal, list[dict[str, Any]]]:
     advance = money(advance_amount, "Valor do adiantamento")
     if final and advance_received and advance <= 0:
@@ -510,6 +566,8 @@ def _validate_rdv_payload(
             raise BusinessError(
                 f"O valor deve ser zero quando o tipo é Nenhum em {entry_date:%d/%m/%Y}."
             )
+        if benefit_type != BenefitType.NONE and fixed_benefit_amounts is not None:
+            benefit_amount = fixed_benefit_amounts[benefit_type]
         if final and benefit_type != BenefitType.NONE and benefit_amount <= 0:
             raise BusinessError(f"Informe o valor da despesa de {entry_date:%d/%m/%Y}.")
         normalized.append(
@@ -569,6 +627,7 @@ def save_rdv_draft(
                 raise BusinessError("Colaborador não encontrado ou inativo.")
             if not period:
                 raise BusinessError("Período não encontrado.")
+            settings = _get_or_create_expense_settings(session)
             advance, normalized = _validate_rdv_payload(
                 employee,
                 period,
@@ -576,6 +635,10 @@ def save_rdv_draft(
                 advance_amount,
                 entries,
                 final=False,
+                fixed_benefit_amounts={
+                    BenefitType.DIARIA: settings.daily_amount,
+                    BenefitType.TICKET: settings.ticket_amount,
+                },
             )
             existing = session.scalar(
                 select(RdvSubmission)
@@ -662,8 +725,18 @@ def create_rdv(
                 raise BusinessError("Colaborador não encontrado ou inativo.")
             if not period:
                 raise BusinessError("Período não encontrado.")
-            advance, normalized = validate_rdv_payload(
-                employee, period, advance_received, advance_amount, entries
+            settings = _get_or_create_expense_settings(session)
+            advance, normalized = _validate_rdv_payload(
+                employee,
+                period,
+                advance_received,
+                advance_amount,
+                entries,
+                final=True,
+                fixed_benefit_amounts={
+                    BenefitType.DIARIA: settings.daily_amount,
+                    BenefitType.TICKET: settings.ticket_amount,
+                },
             )
             existing = session.scalar(
                 select(RdvSubmission)

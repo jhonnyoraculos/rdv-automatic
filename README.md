@@ -6,7 +6,7 @@ Aplicação Streamlit para envio, análise e exportação dos RDVs de motoristas
 
 - formulário mobile-first gerado a partir do período ativo e do colaborador autenticado;
 - rascunho salvo automaticamente, retomado em outros acessos e enviado ao painel somente após a confirmação final;
-- diária preenchida inicialmente com R$ 100,00, ticket com R$ 32,00 e prévia visual da folha durante o preenchimento;
+- diária e ticket com valores fixos configuráveis somente no painel administrativo, além da prévia visual da folha durante o preenchimento;
 - acesso individual com senha temporária aleatória armazenada somente como hash;
 - login do colaborador lembrado por 90 dias no dispositivo, com token aleatório armazenado como hash;
 - redefinição administrativa de senha, exibida uma única vez;

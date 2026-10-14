@@ -95,6 +95,22 @@ class EmployeeSession(Base):
     )
 
 
+class ExpenseSettings(Base):
+    __tablename__ = "expense_settings"
+    __table_args__ = (
+        CheckConstraint("daily_amount > 0", name="ck_daily_amount_positive"),
+        CheckConstraint("ticket_amount > 0", name="ck_ticket_amount_positive"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    daily_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    ticket_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    updated_by: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+
+
 class RdvPeriod(Base):
     __tablename__ = "rdv_periods"
     __table_args__ = (

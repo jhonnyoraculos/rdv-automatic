@@ -29,12 +29,14 @@ from services import (
     delete_rdv,
     ensure_default_employees,
     get_active_period,
+    get_expense_settings,
     get_rdv,
     get_rdvs,
     get_submission_for_employee_period,
     reject_rdv,
     reset_employee_password,
     save_rdv_draft,
+    update_expense_settings,
 )
 from utils import date_range
 
@@ -208,6 +210,42 @@ def test_draft_updates_same_record_and_only_locks_after_submission() -> None:
         save_rdv_draft(
             employee.id, period.id, False, 0, partial, "Divinópolis/MG"
         )
+
+
+def test_admin_configures_fixed_benefit_values_enforced_by_server() -> None:
+    defaults = get_expense_settings()
+    assert defaults.daily_amount == 100
+    assert defaults.ticket_amount == 32
+
+    configured = update_expense_settings(125.50, 40, "analista")
+    assert configured.daily_amount == 125.50
+    assert configured.ticket_amount == 40
+    assert configured.updated_by == "analista"
+
+    employee = create_employee("Valores Fixos", EmployeeRole.MOTORISTA)
+    period = create_period(date(2026, 9, 1), date(2026, 9, 2), active=True)
+    entries = _entries(period.start_date, period.end_date)
+    entries[0]["benefit_amount"] = 999
+    entries[1]["benefit_type"] = BenefitType.TICKET
+    entries[1]["benefit_amount"] = 999
+
+    rdv = create_rdv(
+        employee.id,
+        period.id,
+        False,
+        0,
+        entries,
+        "Divinópolis/MG",
+    )
+
+    amounts = {entry.benefit_type: entry.benefit_amount for entry in rdv.entries}
+    assert amounts[BenefitType.DIARIA] == 125.50
+    assert amounts[BenefitType.TICKET] == 40
+
+
+def test_fixed_benefit_values_must_be_positive() -> None:
+    with pytest.raises(BusinessError, match="diária deve ser maior"):
+        update_expense_settings(0, 32, "analista")
 
 
 def test_individual_exports_are_generated() -> None:

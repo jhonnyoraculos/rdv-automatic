@@ -4,7 +4,13 @@ import logging
 
 import streamlit as st
 
-from auth import is_authenticated, is_employee_authenticated, restore_employee_login
+from auth import (
+    AdminRole,
+    current_admin_role,
+    is_authenticated,
+    is_employee_authenticated,
+    restore_employee_login,
+)
 from browser_session import load_employee_browser_token
 from database import init_db
 from services import ensure_default_employees, get_active_period
@@ -35,31 +41,37 @@ login_page = st.Page(
 )
 
 if is_authenticated():
-    navigation = st.navigation(
-        {
-            "Administração": [
-                st.Page(
-                    "pages/admin_dashboard.py",
-                    title="Painel RDV",
-                    icon="📊",
-                    url_path="painel",
-                ),
-                st.Page(
-                    "pages/admin_colaboradores.py",
-                    title="Colaboradores",
-                    icon="👥",
-                    url_path="colaboradores",
-                ),
-                st.Page(
-                    "pages/admin_periodos.py",
-                    title="Períodos",
-                    icon="📅",
-                    url_path="periodos",
-                ),
-                login_page,
-            ],
-        }
-    )
+    admin_pages = [
+        st.Page(
+            "pages/admin_dashboard.py",
+            title="Painel RDV",
+            icon="📊",
+            url_path="painel",
+        ),
+        st.Page(
+            "pages/admin_colaboradores.py",
+            title="Colaboradores",
+            icon="👥",
+            url_path="colaboradores",
+        ),
+        st.Page(
+            "pages/admin_periodos.py",
+            title="Períodos",
+            icon="📅",
+            url_path="periodos",
+        ),
+    ]
+    if current_admin_role() == AdminRole.ANALISTA:
+        admin_pages.append(
+            st.Page(
+                "pages/admin_configuracoes.py",
+                title="Valores das despesas",
+                icon="⚙️",
+                url_path="configuracoes",
+            )
+        )
+    admin_pages.append(login_page)
+    navigation = st.navigation({"Administração": admin_pages})
 else:
     if is_employee_authenticated():
         navigation = st.navigation({"Colaborador": [public_page, login_page]})

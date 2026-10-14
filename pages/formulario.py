@@ -14,6 +14,7 @@ from services import (
     create_rdv,
     get_active_period,
     get_employee,
+    get_expense_settings,
     get_submission_for_employee_period,
     save_rdv_draft,
 )
@@ -49,6 +50,7 @@ if not period:
         "Não há um período de RDV ativo no momento. Procure o responsável pela frota."
     )
     st.stop()
+expense_settings = get_expense_settings()
 
 base_context = f"{employee.id}_{period.id}"
 existing = get_submission_for_employee_period(employee.id, period.id)
@@ -142,12 +144,6 @@ if st.session_state.get("rdv_context") != context:
         st.session_state[f"benefit_{suffix}"] = (
             saved.benefit_type.value if saved else BenefitType.NONE.value
         )
-        st.session_state[f"benefit_value_{suffix}"] = (
-            float(saved.benefit_amount) if saved else 0.0
-        )
-        st.session_state[f"benefit_previous_{suffix}"] = (
-            saved.benefit_type.value if saved else BenefitType.NONE.value
-        )
 
 if (
     existing
@@ -191,12 +187,12 @@ entries: list[dict[str, object]] = []
 benefit_options = [item.value for item in BenefitType]
 benefit_option_labels = {
     "NONE": "Nenhum",
-    "DIARIA": "Diária — R$ 100,00",
-    "TICKET": "Ticket — R$ 32,00",
+    "DIARIA": f"Diária — {format_brl(expense_settings.daily_amount)}",
+    "TICKET": f"Ticket — {format_brl(expense_settings.ticket_amount)}",
 }
-benefit_default_values = {
-    BenefitType.DIARIA.value: 100.0,
-    BenefitType.TICKET.value: 32.0,
+fixed_benefit_values = {
+    BenefitType.DIARIA.value: expense_settings.daily_amount,
+    BenefitType.TICKET.value: expense_settings.ticket_amount,
 }
 for day in date_range(period.start_date, period.end_date):
     suffix = f"{context}_{day:%Y_%m_%d}"
@@ -231,23 +227,16 @@ for day in date_range(period.start_date, period.end_date):
                 key=f"benefit_{suffix}",
             )
         with value_col:
-            benefit_value_key = f"benefit_value_{suffix}"
-            previous_type_key = f"benefit_previous_{suffix}"
-            if st.session_state[previous_type_key] != benefit_type:
-                st.session_state[benefit_value_key] = benefit_default_values.get(
-                    benefit_type, 0.0
-                )
-                st.session_state[previous_type_key] = benefit_type
             if benefit_type != BenefitType.NONE.value:
-                benefit_amount = st.number_input(
-                    "Valor (R$)",
-                    min_value=0.0,
-                    step=0.01,
-                    format="%.2f",
-                    key=benefit_value_key,
+                benefit_amount = fixed_benefit_values[benefit_type]
+                st.text_input(
+                    "Valor fixo",
+                    value=format_brl(benefit_amount),
+                    disabled=True,
+                    key=f"fixed_benefit_{suffix}_{benefit_type}_{benefit_amount}",
                 )
             else:
-                benefit_amount = 0.0
+                benefit_amount = money(0)
         entries.append(
             {
                 "date": day,
