@@ -36,6 +36,8 @@ from services import (
     reject_rdv,
     reset_employee_password,
     save_rdv_draft,
+    set_employee_password,
+    update_employee,
     update_expense_settings,
 )
 from utils import date_range
@@ -134,6 +136,26 @@ def test_reset_password_invalidates_previous_password(monkeypatch) -> None:
 
     assert not auth.login_employee(access.username, access.temporary_password)
     assert auth.login_employee(renewed.username, renewed.temporary_password)
+
+
+def test_admin_defined_password_remains_valid_until_manual_change(monkeypatch) -> None:
+    access = create_employee_with_access(
+        "Senha Fixa",
+        EmployeeRole.MOTORISTA,
+        password="minha-senha-fixa",
+    )
+    monkeypatch.setattr(auth.st, "session_state", {})
+
+    assert auth.login_employee(access.username, "minha-senha-fixa")
+
+    update_employee(access.employee.id, "Senha Fixa", EmployeeRole.MOTORISTA, True)
+    monkeypatch.setattr(auth.st, "session_state", {})
+    assert auth.login_employee(access.username, " minha-senha-fixa ")
+
+    set_employee_password(access.employee.id, "nova-senha-fixa")
+    monkeypatch.setattr(auth.st, "session_state", {})
+    assert not auth.login_employee(access.username, "minha-senha-fixa")
+    assert auth.login_employee(access.username, "nova-senha-fixa")
 
 
 def test_create_reject_and_resubmit_same_protocol() -> None:

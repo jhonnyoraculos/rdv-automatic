@@ -203,11 +203,18 @@ def generate_pending_employee_access() -> list[EmployeeAccess]:
 
 
 def create_employee_with_access(
-    name: str, role: EmployeeRole | str, active: bool = True
+    name: str,
+    role: EmployeeRole | str,
+    active: bool = True,
+    password: str | None = None,
 ) -> EmployeeAccess:
     normalized_name = clean_text(name, "Nome", 150, required=True).upper()
     timestamp = now_sp()
-    temporary_password = _temporary_password()
+    fixed_password = str(password).strip() if password is not None else _temporary_password()
+    try:
+        password_hash = generate_password_hash(fixed_password)
+    except ValueError as exc:
+        raise BusinessError(str(exc)) from exc
     with session_scope() as session:
         duplicate = session.scalar(
             select(Employee).where(func.lower(Employee.name) == normalized_name.lower())
@@ -218,7 +225,7 @@ def create_employee_with_access(
         employee = Employee(
             name=normalized_name,
             username=username,
-            password_hash=generate_password_hash(temporary_password),
+            password_hash=password_hash,
             role=_role(role),
             active=bool(active),
             created_at=timestamp,
@@ -227,7 +234,7 @@ def create_employee_with_access(
         session.add(employee)
         session.flush()
         logger.info("Colaborador criado: id=%s nome=%s", employee.id, employee.name)
-        return EmployeeAccess(employee, username, temporary_password)
+        return EmployeeAccess(employee, username, fixed_password)
 
 
 def create_employee(
@@ -253,6 +260,28 @@ def reset_employee_password(employee_id: int) -> EmployeeAccess:
         session.flush()
         logger.info("Senha temporária renovada: colaborador=%s", employee.id)
         return EmployeeAccess(employee, employee.username, temporary_password)
+
+
+def set_employee_password(employee_id: int, password: str) -> EmployeeAccess:
+    fixed_password = str(password or "").strip()
+    try:
+        password_hash = generate_password_hash(fixed_password)
+    except ValueError as exc:
+        raise BusinessError(str(exc)) from exc
+    with session_scope() as session:
+        employee = session.get(Employee, employee_id)
+        if not employee:
+            raise BusinessError("Colaborador não encontrado.")
+        if not employee.username:
+            employee.username = _available_username(session, employee.name)
+        employee.password_hash = password_hash
+        session.execute(
+            delete(EmployeeSession).where(EmployeeSession.employee_id == employee.id)
+        )
+        employee.updated_at = now_sp()
+        session.flush()
+        logger.info("Senha fixa definida: colaborador=%s", employee.id)
+        return EmployeeAccess(employee, employee.username, fixed_password)
 
 
 def update_employee(

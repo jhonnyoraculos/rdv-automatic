@@ -187,7 +187,8 @@ def login(username: str, password: str) -> bool:
 
 def login_employee(username: str, password: str) -> bool:
     supplied_username = username.strip()
-    if not supplied_username or not password:
+    supplied_password = password.strip()
+    if not supplied_username or not supplied_password:
         return False
     with session_scope() as session:
         employee = session.scalar(
@@ -200,7 +201,8 @@ def login_employee(username: str, password: str) -> bool:
             return False
         try:
             valid = bcrypt.checkpw(
-                password.encode("utf-8"), employee.password_hash.encode("utf-8")
+                supplied_password.encode("utf-8"),
+                employee.password_hash.encode("utf-8"),
             )
         except (ValueError, TypeError):
             valid = False

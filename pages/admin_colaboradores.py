@@ -7,9 +7,8 @@ from models import EmployeeRole
 from services import (
     BusinessError,
     create_employee_with_access,
-    generate_pending_employee_access,
     get_employees,
-    reset_employee_password,
+    set_employee_password,
     update_employee,
 )
 from ui import company_header, require_admin
@@ -25,40 +24,38 @@ with create_tab:
             "Função", list(EmployeeRole), format_func=lambda value: value.value
         )
         active = st.checkbox("Ativo", value=True)
+        fixed_password = st.text_input(
+            "Senha fixa",
+            max_chars=100,
+            help="Mínimo de 8 caracteres. Esta senha permanecerá válida até você alterá-la.",
+        )
+        password_confirmation = st.text_input(
+            "Confirme a senha fixa",
+            max_chars=100,
+        )
         submit = st.form_submit_button("Cadastrar colaborador", type="primary")
     if submit:
         try:
-            access = create_employee_with_access(name, role, active)
-            st.success("Colaborador cadastrado com sucesso.")
-            st.warning(
-                "Copie os dados abaixo agora. A senha não será mostrada novamente."
+            if fixed_password.strip() != password_confirmation.strip():
+                raise BusinessError("A confirmação da senha não confere.")
+            access = create_employee_with_access(
+                name,
+                role,
+                active,
+                password=fixed_password,
             )
+            st.success("Colaborador cadastrado com sucesso.")
             st.code(
-                f"Usuário: {access.username}\nSenha temporária: {access.temporary_password}",
+                f"Usuário: {access.username}\nSenha fixa: {access.temporary_password}",
                 language=None,
+            )
+            st.caption(
+                "A senha permanecerá válida até ser alterada manualmente nesta tela."
             )
         except BusinessError as exc:
             st.error(str(exc))
 
 with edit_tab:
-    if st.button(
-        "Gerar acessos pendentes",
-        help="Cria uma senha temporária para todos os colaboradores que ainda não possuem acesso.",
-    ):
-        accesses = generate_pending_employee_access()
-        if accesses:
-            st.warning(
-                "Copie estes acessos agora. As senhas não serão mostradas novamente."
-            )
-            st.code(
-                "\n".join(
-                    f"{item.employee.name} | Usuário: {item.username} | Senha: {item.temporary_password}"
-                    for item in accesses
-                ),
-                language=None,
-            )
-        else:
-            st.info("Todos os colaboradores ativos já possuem acesso.")
     search = st.text_input("Pesquisar por nome", key="employee_search")
     employees = get_employees(search=search)
     table = pd.DataFrame(
@@ -67,6 +64,7 @@ with edit_tab:
                 "ID": employee.id,
                 "Nome": employee.name,
                 "Usuário": employee.username or "Acesso pendente",
+                "Acesso": "Senha definida" if employee.password_hash else "Sem senha",
                 "Função": employee.role.value,
                 "Status": "Ativo" if employee.active else "Inativo",
             }
@@ -109,20 +107,36 @@ with edit_tab:
         st.divider()
         st.write("**Acesso do colaborador**")
         st.caption(
-            f"Usuário: {selected.username or 'será criado ao gerar a senha'}"
+            f"Usuário: {selected.username or 'será criado ao definir a senha'}"
         )
-        if st.button(
-            "Gerar nova senha",
-            type="primary",
-            key=f"reset_password_{selected.id}",
-        ):
+        st.caption(
+            "A senha definida permanecerá válida. Preencha os campos abaixo somente quando quiser defini-la ou alterá-la."
+        )
+        with st.form(f"fixed_password_{selected.id}"):
+            fixed_password = st.text_input(
+                "Senha fixa",
+                max_chars=100,
+                help="Mínimo de 8 caracteres.",
+            )
+            password_confirmation = st.text_input(
+                "Confirme a senha fixa",
+                max_chars=100,
+            )
+            save_password = st.form_submit_button(
+                "SALVAR SENHA FIXA",
+                type="primary",
+                use_container_width=True,
+            )
+        if save_password:
             try:
-                access = reset_employee_password(selected.id)
-                st.warning(
-                    "Copie os dados abaixo agora. A nova senha não será mostrada novamente."
+                if fixed_password.strip() != password_confirmation.strip():
+                    raise BusinessError("A confirmação da senha não confere.")
+                access = set_employee_password(selected.id, fixed_password)
+                st.success(
+                    "Senha fixa salva. Ela permanecerá válida até você alterá-la novamente."
                 )
                 st.code(
-                    f"Usuário: {access.username}\nSenha temporária: {access.temporary_password}",
+                    f"Usuário: {access.username}\nSenha fixa: {access.temporary_password}",
                     language=None,
                 )
             except BusinessError as exc:
