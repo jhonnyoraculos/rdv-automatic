@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from auth import AdminRole, current_admin_role
 from models import EmployeeRole
 from services import (
     BusinessError,
@@ -85,6 +86,21 @@ with edit_tab:
         selected = next(
             employee for employee in employees if employee.id == selected_id
         )
+        if current_admin_role() == AdminRole.ANALISTA:
+            st.write("**Preenchimento do RDV**")
+            if st.button(
+                "PREENCHER RDV PARA ESTE COLABORADOR",
+                type="primary",
+                use_container_width=True,
+                disabled=not selected.active,
+                key=f"fill_rdv_{selected.id}",
+            ):
+                st.session_state["admin_fill_employee_id"] = selected.id
+                st.session_state["admin_fill_employee_selector"] = selected.id
+                st.switch_page("pages/formulario.py")
+            if not selected.active:
+                st.caption("Ative o colaborador para preencher um RDV em nome dele.")
+            st.divider()
         with st.form(f"edit_employee_{selected.id}"):
             edited_name = st.text_input(
                 "Nome completo", value=selected.name, max_chars=150

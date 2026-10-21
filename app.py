@@ -62,13 +62,21 @@ if is_authenticated():
         ),
     ]
     if current_admin_role() == AdminRole.ANALISTA:
-        admin_pages.append(
-            st.Page(
-                "pages/admin_configuracoes.py",
-                title="Valores das despesas",
-                icon="⚙️",
-                url_path="configuracoes",
-            )
+        admin_pages.extend(
+            [
+                st.Page(
+                    "pages/formulario.py",
+                    title="Preencher RDV",
+                    icon="🧾",
+                    url_path="preencher-rdv",
+                ),
+                st.Page(
+                    "pages/admin_configuracoes.py",
+                    title="Valores das despesas",
+                    icon="⚙️",
+                    url_path="configuracoes",
+                ),
+            ]
         )
     admin_pages.append(login_page)
     navigation = st.navigation({"Administração": admin_pages})

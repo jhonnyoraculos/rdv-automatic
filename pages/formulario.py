@@ -6,19 +6,26 @@ from types import SimpleNamespace
 
 import streamlit as st
 
-from auth import current_employee_id, logout
+from auth import (
+    AdminRole,
+    current_admin_role,
+    current_employee_id,
+    is_authenticated,
+    logout,
+)
 from exports import PDF_LAYOUT_VERSION, pdf_to_png, rdv_to_pdf
 from models import BenefitType, EmployeeRole, SubmissionStatus
 from services import (
     BusinessError,
     create_rdv,
+    get_active_employees,
     get_active_period,
     get_employee,
     get_expense_settings,
     get_submission_for_employee_period,
     save_rdv_draft,
 )
-from ui import company_header, require_employee
+from ui import company_header, require_admin, require_employee
 from utils import (
     WEEKDAYS_PT,
     calculate_rdv_totals,
@@ -30,20 +37,64 @@ from utils import (
     protocol,
 )
 
-require_employee()
+admin_fill_mode = is_authenticated()
+if admin_fill_mode:
+    require_admin()
+    if current_admin_role() != AdminRole.ANALISTA:
+        st.error("Somente o analista pode preencher um RDV para um colaborador.")
+        st.stop()
+else:
+    require_employee()
+
 company_header(
     "Relatório de Despesas de Viagem — RDV",
-    "Preenchimento digital para motoristas e ajudantes",
+    (
+        "Preenchimento administrativo em nome do colaborador"
+        if admin_fill_mode
+        else "Preenchimento digital para motoristas e ajudantes"
+    ),
 )
 
 logger = logging.getLogger("rdv.ui")
 
 period = get_active_period()
-employee_id = current_employee_id()
+if admin_fill_mode:
+    active_employees = get_active_employees()
+    employee_ids = [item.id for item in active_employees]
+    requested_employee_id = st.session_state.get("admin_fill_employee_id")
+    if requested_employee_id not in employee_ids:
+        requested_employee_id = None
+    selector_key = "admin_fill_employee_selector"
+    if st.session_state.get(selector_key) not in employee_ids:
+        st.session_state[selector_key] = requested_employee_id
+    employee_id = st.selectbox(
+        "Escolha o colaborador",
+        [None, *employee_ids],
+        format_func=lambda value: (
+            "Selecione..."
+            if value is None
+            else next(
+                item.name for item in active_employees if item.id == value
+            )
+        ),
+        key=selector_key,
+    )
+    st.session_state["admin_fill_employee_id"] = employee_id
+    if employee_id is None:
+        st.info("Selecione um colaborador para preencher o RDV em nome dele.")
+        st.stop()
+    if st.button("VOLTAR AOS COLABORADORES"):
+        st.switch_page("pages/admin_colaboradores.py")
+else:
+    employee_id = current_employee_id()
+
 employee = get_employee(employee_id) if employee_id is not None else None
 if not employee or not employee.active:
-    logout()
-    st.error("Seu acesso não está mais ativo. Procure o responsável pela frota.")
+    if admin_fill_mode:
+        st.error("O colaborador selecionado não está ativo.")
+    else:
+        logout()
+        st.error("Seu acesso não está mais ativo. Procure o responsável pela frota.")
     st.stop()
 if not period:
     st.info(
@@ -62,6 +113,8 @@ if (
 ):
     st.success(f"RDV enviado com sucesso! Protocolo: {st.session_state['rdv_success']}")
     st.balloons()
+    if admin_fill_mode and st.button("IR PARA O PAINEL RDV", type="primary"):
+        st.switch_page("pages/admin_dashboard.py")
     st.stop()
 if existing and existing.status == SubmissionStatus.APROVADO:
     st.success(
@@ -376,25 +429,19 @@ else:
         "ao analista quando você confirmar o envio no final."
     )
 
-confirmed = st.checkbox(
-    "Confirmo que revisei as informações e que os valores informados estão corretos.",
-    key=f"reviewed_{context}",
-)
 if st.button(
-    "CONFIRMAR E ENVIAR RDV",
+    "ENVIAR RDV",
     type="primary",
-    disabled=(not confirmed or not location.strip()),
+    disabled=not location.strip(),
     use_container_width=True,
 ):
     st.session_state["rdv_confirm"] = True
 
 if st.session_state.get("rdv_confirm"):
-    st.warning(
-        "Confirma o envio definitivo deste RDV? Depois do envio, alterações dependerão da devolução pelo administrador."
-    )
+    st.warning("Confirmar o envio deste RDV?")
     confirm_col, cancel_col = st.columns(2)
     if confirm_col.button(
-        "Sim, enviar agora", type="primary", use_container_width=True
+        "SIM, ENVIAR", type="primary", use_container_width=True
     ):
         try:
             saved = create_rdv(
@@ -416,6 +463,6 @@ if st.session_state.get("rdv_confirm"):
             st.error(
                 "Não foi possível enviar o RDV. Tente novamente ou procure o responsável pela frota."
             )
-    if cancel_col.button("Voltar e revisar", use_container_width=True):
+    if cancel_col.button("NÃO", use_container_width=True):
         st.session_state["rdv_confirm"] = False
         st.rerun()
