@@ -6,7 +6,13 @@ import streamlit as st
 from auth import current_employee_id, logout
 from exports import PDF_LAYOUT_VERSION, pdf_to_png, rdv_to_pdf, rdv_to_xlsx
 from print_document import print_pdf_button
-from services import get_employee, get_rdv, get_rdvs
+from services import (
+    BusinessError,
+    get_employee,
+    get_rdv,
+    get_rdvs,
+    reopen_rdv_for_editing,
+)
 from ui import company_header, require_employee, status_badge, submission_status_label
 from utils import (
     calculate_rdv_totals,
@@ -95,6 +101,43 @@ st.info(
     "Esta é a sua folha enviada. Você pode imprimir mesmo enquanto ela aguarda "
     "a análise. O status CONCLUÍDO será exibido depois da aprovação."
 )
+
+edit_confirm_key = f"employee_confirm_reopen_{rdv.id}"
+if st.button("EDITAR ESTE RDV", use_container_width=True):
+    st.session_state[edit_confirm_key] = True
+if st.session_state.get(edit_confirm_key):
+    if rdv.status.value == "APROVADO":
+        st.warning(
+            "Esta folha já foi concluída. Ao editar, a aprovação será cancelada "
+            "e o RDV precisará ser enviado novamente. Confirmar?"
+        )
+    else:
+        st.warning(
+            "O RDV voltará para edição e precisará ser enviado novamente. "
+            "Confirmar?"
+        )
+    edit_col, cancel_col = st.columns(2)
+    if edit_col.button(
+        "SIM, EDITAR",
+        type="primary",
+        use_container_width=True,
+        key=f"employee_reopen_{rdv.id}",
+    ):
+        try:
+            reopen_rdv_for_editing(rdv.id, employee_id=employee.id)
+            st.session_state["employee_period_selector"] = rdv.period_id
+            st.session_state.pop(edit_confirm_key, None)
+            st.session_state.pop("rdv_context", None)
+            st.switch_page("pages/formulario.py")
+        except BusinessError as exc:
+            st.error(str(exc))
+    if cancel_col.button(
+        "NÃO",
+        use_container_width=True,
+        key=f"employee_cancel_reopen_{rdv.id}",
+    ):
+        st.session_state.pop(edit_confirm_key, None)
+        st.rerun()
 
 pdf_data = rdv_to_pdf(rdv)
 png_data = pdf_to_png(pdf_data)

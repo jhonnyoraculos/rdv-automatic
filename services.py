@@ -865,6 +865,50 @@ def get_rdv(submission_id: int) -> RdvSubmission | None:
         )
 
 
+def reopen_rdv_for_editing(
+    submission_id: int,
+    *,
+    employee_id: int | None = None,
+    reviewer_role: str | None = None,
+) -> RdvSubmission:
+    role = str(getattr(reviewer_role, "value", reviewer_role or "")).upper()
+    if employee_id is None and role != "ANALISTA":
+        raise BusinessError(
+            "Somente o colaborador responsável ou o analista pode editar este RDV."
+        )
+    with session_scope() as session:
+        submission = session.get(RdvSubmission, submission_id)
+        if not submission:
+            raise BusinessError("RDV não encontrado.")
+        if employee_id is not None and submission.employee_id != employee_id:
+            raise BusinessError("Você não pode editar o RDV de outro colaborador.")
+        if submission.status not in {
+            SubmissionStatus.ENVIADO,
+            SubmissionStatus.AGUARDANDO_GESTOR,
+            SubmissionStatus.APROVADO,
+        }:
+            raise BusinessError("Este RDV já está liberado para edição.")
+        submission.status = SubmissionStatus.RASCUNHO
+        submission.analyst_signed_at = None
+        submission.analyst_username = None
+        submission.manager_signed_at = None
+        submission.manager_username = None
+        submission.reviewed_at = None
+        submission.admin_comment = None
+        submission.updated_at = now_sp()
+        session.flush()
+        logger.info(
+            "RDV reaberto para edição: id=%s colaborador=%s perfil=%s",
+            submission.id,
+            submission.employee_id,
+            role or "COLABORADOR",
+        )
+    loaded = get_rdv(submission_id)
+    if not loaded:
+        raise RuntimeError("Falha ao recuperar o RDV reaberto.")
+    return loaded
+
+
 def get_rdvs(
     employee_id: int | None = None,
     role: EmployeeRole | str | None = None,

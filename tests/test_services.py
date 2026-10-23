@@ -34,6 +34,7 @@ from services import (
     get_rdvs,
     get_submission_for_employee_period,
     reject_rdv,
+    reopen_rdv_for_editing,
     reset_employee_password,
     save_rdv_draft,
     set_employee_password,
@@ -431,6 +432,29 @@ def test_admin_can_delete_rdv_so_employee_can_submit_again() -> None:
     assert get_rdv(rdv.id) is None
     replacement = _create_test_rdv(employee.id, period.id, entries)
     assert replacement.status == SubmissionStatus.ENVIADO
+
+
+def test_sent_or_approved_rdv_can_be_reopened_edited_and_resent() -> None:
+    employee = create_employee("Edição Após Envio", EmployeeRole.MOTORISTA)
+    other_employee = create_employee("Outro Colaborador", EmployeeRole.MOTORISTA)
+    period = create_period(date(2026, 9, 1), date(2026, 9, 1), active=True)
+    entries = _entries(period.start_date, period.end_date)
+    sent = _create_test_rdv(employee.id, period.id, entries)
+    approved = approve_rdv(sent.id, "ANALISTA", "analista")
+
+    with pytest.raises(BusinessError, match="outro colaborador"):
+        reopen_rdv_for_editing(approved.id, employee_id=other_employee.id)
+
+    reopened = reopen_rdv_for_editing(approved.id, employee_id=employee.id)
+    assert reopened.status == SubmissionStatus.RASCUNHO
+    assert reopened.analyst_signed_at is None
+    assert reopened.analyst_username is None
+
+    entries[0]["city"] = "Cidade corrigida"
+    resent = _create_test_rdv(employee.id, period.id, entries)
+    assert resent.id == approved.id
+    assert resent.status == SubmissionStatus.ENVIADO
+    assert resent.entries[0].city == "Cidade corrigida"
 
 
 def test_automatic_period_sequence_uses_requested_anchor_and_interval() -> None:

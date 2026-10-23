@@ -14,7 +14,7 @@ from auth import (
     logout,
 )
 from exports import PDF_LAYOUT_VERSION, pdf_to_png, rdv_to_pdf
-from models import BenefitType, EmployeeRole, SubmissionStatus
+from models import BenefitType, EmployeeRole, RdvSubmission, SubmissionStatus
 from print_document import print_pdf_button
 from services import (
     BusinessError,
@@ -25,6 +25,7 @@ from services import (
     get_expense_settings,
     get_periods,
     get_submission_for_employee_period,
+    reopen_rdv_for_editing,
     save_rdv_draft,
 )
 from ui import company_header, require_admin, require_employee
@@ -162,6 +163,59 @@ expense_settings = get_expense_settings()
 
 base_context = f"{employee.id}_{period.id}"
 existing = get_submission_for_employee_period(employee.id, period.id)
+
+
+def show_reopen_controls(submission: RdvSubmission) -> None:
+    submission_id = submission.id
+    submission_status = submission.status
+    confirm_key = f"confirm_reopen_rdv_{submission_id}"
+    if st.button(
+        "EDITAR ESTE RDV",
+        use_container_width=True,
+        key=f"reopen_rdv_{submission_id}",
+    ):
+        st.session_state[confirm_key] = True
+    if not st.session_state.get(confirm_key):
+        return
+    if submission_status == SubmissionStatus.APROVADO:
+        st.warning(
+            "Esta folha já foi concluída. Ao editar, a aprovação será cancelada "
+            "e o RDV precisará ser enviado novamente. Confirmar?"
+        )
+    else:
+        st.warning(
+            "O RDV voltará para edição e precisará ser enviado novamente. "
+            "Confirmar?"
+        )
+    confirm_col, cancel_col = st.columns(2)
+    if confirm_col.button(
+        "SIM, EDITAR",
+        type="primary",
+        use_container_width=True,
+        key=f"confirm_reopen_{submission_id}",
+    ):
+        try:
+            reopen_rdv_for_editing(
+                submission_id,
+                employee_id=None if admin_fill_mode else employee.id,
+                reviewer_role=(current_admin_role() if admin_fill_mode else None),
+            )
+            st.session_state.pop(confirm_key, None)
+            st.session_state.pop("rdv_context", None)
+            st.session_state.pop("rdv_success", None)
+            st.session_state.pop("rdv_success_context", None)
+            st.rerun()
+        except BusinessError as exc:
+            st.error(str(exc))
+    if cancel_col.button(
+        "NÃO",
+        use_container_width=True,
+        key=f"cancel_reopen_{submission_id}",
+    ):
+        st.session_state.pop(confirm_key, None)
+        st.rerun()
+
+
 if (
     st.session_state.get("rdv_success_context") == base_context
     and st.session_state.get("rdv_success")
@@ -177,6 +231,7 @@ if (
     ):
         st.session_state["employee_opened_rdv_id"] = existing.id
         st.switch_page("pages/meus_rdvs.py")
+    show_reopen_controls(existing)
     st.stop()
 if existing and existing.status == SubmissionStatus.APROVADO:
     st.success(
@@ -214,6 +269,7 @@ if existing and existing.status == SubmissionStatus.APROVADO:
         "image/png",
         use_container_width=True,
     )
+    show_reopen_controls(existing)
     st.stop()
 if existing and existing.status in (
     SubmissionStatus.ENVIADO,
@@ -234,6 +290,7 @@ if existing and existing.status in (
     ):
         st.session_state["employee_opened_rdv_id"] = existing.id
         st.switch_page("pages/meus_rdvs.py")
+    show_reopen_controls(existing)
     st.stop()
 
 revision = (
