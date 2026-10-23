@@ -22,6 +22,7 @@ from services import (
     get_active_period,
     get_employee,
     get_expense_settings,
+    get_periods,
     get_submission_for_employee_period,
     save_rdv_draft,
 )
@@ -57,7 +58,6 @@ company_header(
 
 logger = logging.getLogger("rdv.ui")
 
-period = get_active_period()
 if admin_fill_mode:
     active_employees = get_active_employees()
     employee_ids = [item.id for item in active_employees]
@@ -83,10 +83,35 @@ if admin_fill_mode:
     if employee_id is None:
         st.info("Selecione um colaborador para preencher o RDV em nome dele.")
         st.stop()
+
+    periods = get_periods()
+    if not periods:
+        st.info("Não há nenhum período de RDV cadastrado.")
+        st.stop()
+    period_by_id = {item.id: item for item in periods}
+    period_ids = list(period_by_id)
+    active_period_id = next((item.id for item in periods if item.active), None)
+    period_selector_key = "admin_fill_period_selector"
+    if st.session_state.get(period_selector_key) not in period_ids:
+        st.session_state[period_selector_key] = (
+            active_period_id or (period_ids[0] if period_ids else None)
+        )
+    period_id = st.selectbox(
+        "Escolha o período",
+        period_ids,
+        format_func=lambda value: (
+            f"{format_date(period_by_id[value].start_date)} a "
+            f"{format_date(period_by_id[value].end_date)}"
+            f"{' • ATIVO' if period_by_id[value].active else ''}"
+        ),
+        key=period_selector_key,
+    )
+    period = period_by_id.get(period_id)
     if st.button("VOLTAR AOS COLABORADORES"):
         st.switch_page("pages/admin_colaboradores.py")
 else:
     employee_id = current_employee_id()
+    period = get_active_period()
 
 employee = get_employee(employee_id) if employee_id is not None else None
 if not employee or not employee.active:
@@ -97,9 +122,13 @@ if not employee or not employee.active:
         st.error("Seu acesso não está mais ativo. Procure o responsável pela frota.")
     st.stop()
 if not period:
-    st.info(
-        "Não há um período de RDV ativo no momento. Procure o responsável pela frota."
-    )
+    if admin_fill_mode:
+        st.info("Não há nenhum período de RDV cadastrado.")
+    else:
+        st.info(
+            "Não há um período de RDV ativo no momento. "
+            "Procure o responsável pela frota."
+        )
     st.stop()
 expense_settings = get_expense_settings()
 
