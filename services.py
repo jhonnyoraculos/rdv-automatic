@@ -42,7 +42,7 @@ _employee_seed_lock = Lock()
 AUTOMATIC_PERIOD_FIRST_START = date(2026, 9, 28)
 AUTOMATIC_PERIOD_DAYS = 13
 AUTOMATIC_PERIOD_CYCLE_DAYS = 14
-AUTOMATIC_PERIOD_ACTIVATION_LEAD_DAYS = 3
+AUTOMATIC_PERIOD_ACTIVATION_LEAD_DAYS = 0
 DEFAULT_DAILY_AMOUNT = Decimal("100.00")
 DEFAULT_TICKET_AMOUNT = Decimal("32.00")
 
@@ -506,8 +506,7 @@ def get_active_period(reference_date: date | None = None) -> RdvPeriod | None:
         first_activation = AUTOMATIC_PERIOD_FIRST_START - timedelta(
             days=AUTOMATIC_PERIOD_ACTIVATION_LEAD_DAYS
         )
-        # The first period starts on its declared date. From the second period
-        # onward, rollover happens on the preceding Friday.
+        # A new period becomes active only on its starting Monday.
         if today < AUTOMATIC_PERIOD_FIRST_START:
             _ensure_automatic_period(session, AUTOMATIC_PERIOD_FIRST_START)
             return active

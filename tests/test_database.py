@@ -29,6 +29,7 @@ def test_init_db_adds_access_and_automatic_period_columns(
     assert {"username", "password_hash"} <= employee_columns
     assert "automatic" in period_columns
     assert "employee_sessions" in inspect(engine).get_table_names()
+    assert "admin_sessions" in inspect(engine).get_table_names()
     assert "expense_settings" in inspect(engine).get_table_names()
     engine.dispose()
 

@@ -30,6 +30,7 @@ def test_employee_cookie_triggers_streamlit_without_reloading_browser(
     assert 'setTriggerValue("completed"' in browser_session.COOKIE_JS
     assert 'setStateValue("token"' in browser_session.COOKIE_JS
     assert "localStorage" in browser_session.COOKIE_JS
+    assert browser_session.COOKIE_MAX_AGE_DAYS == 365
 
 
 def test_employee_token_is_loaded_from_browser_storage(monkeypatch) -> None:

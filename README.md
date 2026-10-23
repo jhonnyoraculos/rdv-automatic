@@ -8,8 +8,9 @@ Aplicação Streamlit para envio, análise e exportação dos RDVs de motoristas
 - rascunho salvo automaticamente, retomado em outros acessos e enviado ao painel somente após a confirmação final;
 - diária e ticket com valores fixos configuráveis somente no painel administrativo, além da prévia visual da folha durante o preenchimento;
 - acesso individual com senha fixa definida pelo administrador e armazenada somente como hash;
-- login do colaborador lembrado por 90 dias no dispositivo, com token aleatório armazenado como hash;
+- login do colaborador e do analista lembrado por até 1 ano no dispositivo, com renovação do prazo e token aleatório armazenado como hash;
 - definição administrativa de senha fixa, válida até uma alteração manual;
+- histórico individual de RDVs com protocolo, data de envio, status, visualização, downloads e impressão mesmo antes da aprovação;
 - aprovação em duas etapas, pelo analista e pelo gestor;
 - folha concluída com linhas para assinaturas físicas do colaborador, analista e gestor;
 - folha disponível para visualização e download em PDF e PNG;
@@ -41,6 +42,7 @@ Aplicação Streamlit para envio, análise e exportação dos RDVs de motoristas
 ├── utils.py
 ├── pages/
 │   ├── formulario.py
+│   ├── meus_rdvs.py
 │   ├── admin_login.py
 │   ├── admin_dashboard.py
 │   ├── admin_colaboradores.py
@@ -108,7 +110,7 @@ Os testes de serviço usam um SQLite temporário e não alteram o banco de desen
 
 - existe no máximo um período ativo;
 - a sequência automática começa em 28/09/2026 a 10/10/2026;
-- a próxima quinzena é ativada na sexta-feira anterior, deixando o domingo fora;
+- a próxima quinzena é ativada somente na segunda-feira em que começa;
 - os colaboradores fornecidos são cadastrados automaticamente como motorista ou ajudante;
 - cada colaborador autenticado só preenche o próprio RDV;
 - sair, desativar o colaborador ou gerar nova senha revoga os acessos salvos;

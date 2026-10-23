@@ -12,12 +12,12 @@ import streamlit as st
 from sqlalchemy import delete, func, select
 from streamlit.errors import StreamlitSecretNotFoundError
 
-from browser_session import COOKIE_NAME
+from browser_session import ADMIN_COOKIE_NAME, COOKIE_MAX_AGE_DAYS, COOKIE_NAME
 from database import session_scope
-from models import Employee, EmployeeSession
+from models import AdminSession, Employee, EmployeeSession
 from utils import now_sp
 
-PERSISTENT_SESSION_DAYS = 90
+PERSISTENT_SESSION_DAYS = COOKIE_MAX_AGE_DAYS
 
 
 class AdminRole(str, Enum):
@@ -105,11 +105,68 @@ def _employee_token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _credential_fingerprint(password_hash: str) -> str:
+    return hashlib.sha256(password_hash.encode("utf-8")).hexdigest()
+
+
 def _browser_employee_token() -> str:
     try:
         return str(st.context.cookies.get(COOKIE_NAME, "")).strip()
     except (AttributeError, RuntimeError):
         return ""
+
+
+def _browser_admin_token() -> str:
+    try:
+        return str(st.context.cookies.get(ADMIN_COOKIE_NAME, "")).strip()
+    except (AttributeError, RuntimeError):
+        return ""
+
+
+def restore_admin_login(browser_token: str = "") -> bool:
+    if is_authenticated():
+        return True
+    if st.session_state.get("clear_persistent_admin_cookie"):
+        return False
+    token = browser_token.strip() or _browser_admin_token()
+    if not token:
+        return False
+    with session_scope() as session:
+        timestamp = now_sp()
+        session.execute(delete(AdminSession).where(AdminSession.expires_at <= timestamp))
+        persistent_session = session.scalar(
+            select(AdminSession).where(
+                AdminSession.token_hash == _employee_token_hash(token),
+                AdminSession.expires_at > timestamp,
+            )
+        )
+        if not persistent_session:
+            return False
+        configured_account = next(
+            (
+                (username, password_hash, role)
+                for username, password_hash, role in _configured_accounts()
+                if hmac.compare_digest(username, persistent_session.username)
+                and role.value == persistent_session.role
+            ),
+            None,
+        )
+        if not configured_account or not hmac.compare_digest(
+            persistent_session.credential_fingerprint,
+            _credential_fingerprint(configured_account[1]),
+        ):
+            session.delete(persistent_session)
+            return False
+        persistent_session.expires_at = timestamp + timedelta(
+            days=PERSISTENT_SESSION_DAYS
+        )
+        username = persistent_session.username
+        role = persistent_session.role
+    st.session_state["admin_authenticated"] = True
+    st.session_state["admin_username"] = username
+    st.session_state["admin_role"] = role
+    st.session_state["active_admin_session_token"] = token
+    return True
 
 
 def restore_employee_login(browser_token: str = "") -> bool:
@@ -125,17 +182,21 @@ def restore_employee_login(browser_token: str = "") -> bool:
         session.execute(
             delete(EmployeeSession).where(EmployeeSession.expires_at <= timestamp)
         )
-        employee = session.scalar(
-            select(Employee)
+        restored = session.execute(
+            select(Employee, EmployeeSession)
             .join(EmployeeSession, EmployeeSession.employee_id == Employee.id)
             .where(
                 EmployeeSession.token_hash == _employee_token_hash(token),
                 EmployeeSession.expires_at > timestamp,
                 Employee.active.is_(True),
             )
-        )
-        if not employee:
+        ).one_or_none()
+        if not restored:
             return False
+        employee, persistent_session = restored
+        persistent_session.expires_at = timestamp + timedelta(
+            days=PERSISTENT_SESSION_DAYS
+        )
         employee_id = employee.id
         employee_name = employee.name
     st.session_state["employee_authenticated"] = True
@@ -149,8 +210,16 @@ def consume_new_employee_token() -> str:
     return str(st.session_state.pop("new_employee_session_token", ""))
 
 
+def consume_new_admin_token() -> str:
+    return str(st.session_state.pop("new_admin_session_token", ""))
+
+
 def consume_cookie_clear_request() -> bool:
     return bool(st.session_state.pop("clear_persistent_employee_cookie", False))
+
+
+def consume_admin_cookie_clear_request() -> bool:
+    return bool(st.session_state.pop("clear_persistent_admin_cookie", False))
 
 
 def current_admin_role() -> AdminRole | None:
@@ -178,9 +247,34 @@ def switch_admin_role(role: AdminRole | str) -> AdminRole:
 def login(username: str, password: str) -> bool:
     role = verify_credentials(username, password)
     if role:
+        clean_username = username.strip()
+        configured_hash = next(
+            password_hash
+            for expected_user, password_hash, expected_role in _configured_accounts()
+            if hmac.compare_digest(clean_username, expected_user)
+            and role == expected_role
+        )
+        timestamp = now_sp()
+        token = secrets.token_urlsafe(32)
+        with session_scope() as session:
+            session.execute(
+                delete(AdminSession).where(AdminSession.expires_at <= timestamp)
+            )
+            session.add(
+                AdminSession(
+                    username=clean_username,
+                    role=role.value,
+                    credential_fingerprint=_credential_fingerprint(configured_hash),
+                    token_hash=_employee_token_hash(token),
+                    expires_at=timestamp + timedelta(days=PERSISTENT_SESSION_DAYS),
+                    created_at=timestamp,
+                )
+            )
         st.session_state["admin_authenticated"] = True
-        st.session_state["admin_username"] = username.strip()
+        st.session_state["admin_username"] = clean_username
         st.session_state["admin_role"] = role.value
+        st.session_state["new_admin_session_token"] = token
+        st.session_state["active_admin_session_token"] = token
         return True
     return False
 
@@ -233,6 +327,22 @@ def login_employee(username: str, password: str) -> bool:
 
 
 def logout() -> None:
+    was_admin_authenticated = is_authenticated()
+    admin_token = (
+        _browser_admin_token()
+        or str(st.session_state.get("active_admin_session_token", ""))
+        or str(st.session_state.get("new_admin_session_token", ""))
+    )
+    if admin_token:
+        with session_scope() as session:
+            session.execute(
+                delete(AdminSession).where(
+                    AdminSession.token_hash == _employee_token_hash(admin_token)
+                )
+            )
+    if admin_token or was_admin_authenticated:
+        st.session_state["clear_persistent_admin_cookie"] = True
+
     employee_token = _browser_employee_token()
     active_token = str(st.session_state.get("active_employee_session_token", ""))
     pending_token = str(st.session_state.get("new_employee_session_token", ""))
@@ -259,6 +369,8 @@ def logout() -> None:
         "post_login_redirect",
         "new_employee_session_token",
         "active_employee_session_token",
+        "new_admin_session_token",
+        "active_admin_session_token",
     ):
         st.session_state.pop(key, None)
 

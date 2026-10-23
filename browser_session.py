@@ -3,7 +3,9 @@ from __future__ import annotations
 import streamlit as st
 
 COOKIE_NAME = "rdv_employee_session"
-COOKIE_MAX_AGE_SECONDS = 90 * 24 * 60 * 60
+ADMIN_COOKIE_NAME = "rdv_admin_session"
+COOKIE_MAX_AGE_DAYS = 365
+COOKIE_MAX_AGE_SECONDS = COOKIE_MAX_AGE_DAYS * 24 * 60 * 60
 
 COOKIE_HTML = '<div class="rdv-cookie-control"></div>'
 COOKIE_JS = """
@@ -62,39 +64,63 @@ _cookie_control = st.components.v2.component(
 )
 
 
-def save_employee_cookie(token: str) -> None:
+def _save_browser_token(token: str, name: str, key: str) -> None:
     _cookie_control(
         data={
             "action": "save",
-            "name": COOKIE_NAME,
+            "name": name,
             "value": token,
             "maxAge": COOKIE_MAX_AGE_SECONDS,
         },
-        key="save_employee_cookie",
+        key=key,
         on_token_change=lambda: None,
         on_completed_change=lambda: None,
     )
 
 
-def load_employee_browser_token() -> str:
+def _load_browser_token(name: str, key: str) -> str:
     result = _cookie_control(
         data={
             "action": "read",
-            "name": COOKIE_NAME,
+            "name": name,
             "value": "",
             "maxAge": COOKIE_MAX_AGE_SECONDS,
         },
-        key="read_employee_cookie",
+        key=key,
         on_token_change=lambda: None,
         on_completed_change=lambda: None,
     )
     return str(getattr(result, "token", "") or "").strip()
 
 
-def clear_employee_cookie() -> None:
+def _clear_browser_token(name: str, key: str) -> None:
     _cookie_control(
-        data={"action": "clear", "name": COOKIE_NAME, "value": "", "maxAge": 0},
-        key="clear_employee_cookie",
+        data={"action": "clear", "name": name, "value": "", "maxAge": 0},
+        key=key,
         on_token_change=lambda: None,
         on_completed_change=lambda: None,
     )
+
+
+def save_employee_cookie(token: str) -> None:
+    _save_browser_token(token, COOKIE_NAME, "save_employee_cookie")
+
+
+def load_employee_browser_token() -> str:
+    return _load_browser_token(COOKIE_NAME, "read_employee_cookie")
+
+
+def clear_employee_cookie() -> None:
+    _clear_browser_token(COOKIE_NAME, "clear_employee_cookie")
+
+
+def save_admin_cookie(token: str) -> None:
+    _save_browser_token(token, ADMIN_COOKIE_NAME, "save_admin_cookie")
+
+
+def load_admin_browser_token() -> str:
+    return _load_browser_token(ADMIN_COOKIE_NAME, "read_admin_cookie")
+
+
+def clear_admin_cookie() -> None:
+    _clear_browser_token(ADMIN_COOKIE_NAME, "clear_admin_cookie")

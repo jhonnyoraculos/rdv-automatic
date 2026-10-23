@@ -108,6 +108,6 @@ with edit_tab:
                 st.error(str(exc))
 st.info(
     "A sequência automática começa em 28/09/2026 a 10/10/2026. Cada período tem "
-    "13 dias corridos. Na sexta-feira anterior, o próximo período é ativado e o "
-    "domingo fica fora da quinzena. Ex.: em 09/10 passa a valer 12/10/2026 a 24/10/2026."
+    "13 dias corridos. O próximo período é ativado somente na segunda-feira em "
+    "que começa. Ex.: em 12/10 passa a valer 12/10/2026 a 24/10/2026."
 )

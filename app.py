@@ -9,9 +9,10 @@ from auth import (
     current_admin_role,
     is_authenticated,
     is_employee_authenticated,
+    restore_admin_login,
     restore_employee_login,
 )
-from browser_session import load_employee_browser_token
+from browser_session import load_admin_browser_token, load_employee_browser_token
 from database import init_db
 from services import ensure_default_employees, get_active_period
 from ui import apply_style
@@ -31,10 +32,14 @@ init_db()
 ensure_default_employees()
 get_active_period()
 apply_style()
+restore_admin_login(load_admin_browser_token())
 restore_employee_login(load_employee_browser_token())
 
 public_page = st.Page(
     "pages/formulario.py", title="Enviar RDV", icon="🧾", url_path="rdv"
+)
+employee_history_page = st.Page(
+    "pages/meus_rdvs.py", title="Meus RDVs", icon="📂", url_path="meus-rdvs"
 )
 login_page = st.Page(
     "pages/admin_login.py", title="Acessar", icon="🔐", url_path="acesso"
@@ -82,7 +87,9 @@ if is_authenticated():
     navigation = st.navigation({"Administração": admin_pages})
 else:
     if is_employee_authenticated():
-        navigation = st.navigation({"Colaborador": [public_page, login_page]})
+        navigation = st.navigation(
+            {"Colaborador": [public_page, employee_history_page, login_page]}
+        )
     else:
         navigation = st.navigation([login_page])
 

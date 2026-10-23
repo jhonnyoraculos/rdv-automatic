@@ -15,6 +15,7 @@ from auth import (
 )
 from exports import PDF_LAYOUT_VERSION, pdf_to_png, rdv_to_pdf
 from models import BenefitType, EmployeeRole, SubmissionStatus
+from print_document import print_pdf_button
 from services import (
     BusinessError,
     create_rdv,
@@ -111,7 +112,34 @@ if admin_fill_mode:
         st.switch_page("pages/admin_colaboradores.py")
 else:
     employee_id = current_employee_id()
-    period = get_active_period()
+    principal_period = get_active_period()
+    period = principal_period
+    if principal_period:
+        available_periods = [
+            item
+            for item in get_periods()
+            if item.start_date <= principal_period.start_date
+        ]
+        period_by_id = {item.id: item for item in available_periods}
+        period_ids = list(period_by_id)
+        period_selector_key = "employee_period_selector"
+        if st.session_state.get(period_selector_key) not in period_ids:
+            st.session_state[period_selector_key] = principal_period.id
+        period_id = st.selectbox(
+            "Escolha o período",
+            period_ids,
+            format_func=lambda value: (
+                f"{format_date(period_by_id[value].start_date)} a "
+                f"{format_date(period_by_id[value].end_date)}"
+                f"{' • PRINCIPAL' if value == principal_period.id else ''}"
+            ),
+            key=period_selector_key,
+            help=(
+                "O período principal muda somente na segunda-feira em que a "
+                "nova quinzena começa."
+            ),
+        )
+        period = period_by_id.get(period_id)
 
 employee = get_employee(employee_id) if employee_id is not None else None
 if not employee or not employee.active:
@@ -144,6 +172,11 @@ if (
     st.balloons()
     if admin_fill_mode and st.button("IR PARA O PAINEL RDV", type="primary"):
         st.switch_page("pages/admin_dashboard.py")
+    if not admin_fill_mode and st.button(
+        "ABRIR E IMPRIMIR MINHA FOLHA", type="primary"
+    ):
+        st.session_state["employee_opened_rdv_id"] = existing.id
+        st.switch_page("pages/meus_rdvs.py")
     st.stop()
 if existing and existing.status == SubmissionStatus.APROVADO:
     st.success(
@@ -152,6 +185,10 @@ if existing and existing.status == SubmissionStatus.APROVADO:
     final_pdf = rdv_to_pdf(existing)
     final_png = pdf_to_png(final_pdf)
     st.subheader("Folha final do RDV")
+    print_pdf_button(
+        final_pdf,
+        key=f"print_employee_approved_{existing.id}_{existing.updated_at}",
+    )
     mobile_tab, pdf_tab = st.tabs(["Visualização para celular", "Visualização em PDF"])
     with mobile_tab:
         st.image(final_png, use_container_width=True)
@@ -192,6 +229,11 @@ if existing and existing.status in (
     st.caption(
         f"Status atual: {status_label}. Em caso de dúvida, fale com o responsável pela frota."
     )
+    if not admin_fill_mode and st.button(
+        "ABRIR E IMPRIMIR MINHA FOLHA", type="primary"
+    ):
+        st.session_state["employee_opened_rdv_id"] = existing.id
+        st.switch_page("pages/meus_rdvs.py")
     st.stop()
 
 revision = (

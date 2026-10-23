@@ -112,6 +112,32 @@ def test_employee_login_is_restored_from_persistent_token(monkeypatch) -> None:
     assert auth.current_employee_id() == access.employee.id
 
 
+def test_admin_login_is_restored_from_saved_device_token(monkeypatch) -> None:
+    password_hash = auth.generate_password_hash("senha-segura")
+    values = {
+        "ANALYST_USERNAME": "analista",
+        "ANALYST_PASSWORD_HASH": password_hash,
+    }
+    monkeypatch.setattr(auth, "_secret", lambda name: values.get(name, ""))
+    monkeypatch.setattr(auth.st, "session_state", {})
+    monkeypatch.setattr(auth.st, "context", SimpleNamespace(cookies={}))
+
+    assert auth.login("analista", "senha-segura")
+    token = auth.consume_new_admin_token()
+    assert token
+
+    reopened_session = {}
+    monkeypatch.setattr(auth.st, "session_state", reopened_session)
+    monkeypatch.setattr(
+        auth.st,
+        "context",
+        SimpleNamespace(cookies={"rdv_admin_session": token}),
+    )
+    assert auth.restore_admin_login(token)
+    assert reopened_session["admin_username"] == "analista"
+    assert reopened_session["admin_role"] == auth.AdminRole.ANALISTA.value
+
+
 def test_new_password_revokes_saved_logins(monkeypatch) -> None:
     access = create_employee_with_access("Sessão Revogada", EmployeeRole.AJUDANTE)
     monkeypatch.setattr(auth.st, "session_state", {})
@@ -417,11 +443,20 @@ def test_automatic_period_sequence_uses_requested_anchor_and_interval() -> None:
     thursday = get_active_period(date(2026, 10, 8))
     assert thursday and thursday.id == first.id
 
-    second = get_active_period(date(2026, 10, 9))
+    friday = get_active_period(date(2026, 10, 9))
+    assert friday and friday.id == first.id
+
+    sunday = get_active_period(date(2026, 10, 11))
+    assert sunday and sunday.id == first.id
+
+    second = get_active_period(date(2026, 10, 12))
     assert second and second.start_date == date(2026, 10, 12)
     assert second.end_date == date(2026, 10, 24)
 
-    third = get_active_period(date(2026, 10, 23))
+    friday_before_third = get_active_period(date(2026, 10, 23))
+    assert friday_before_third and friday_before_third.id == second.id
+
+    third = get_active_period(date(2026, 10, 26))
     assert third and third.start_date == date(2026, 10, 26)
     assert third.end_date == date(2026, 11, 7)
 
