@@ -211,13 +211,24 @@ def test_admin_can_change_employee_login_username(monkeypatch) -> None:
     assert not auth.login_employee(previous_username, "senha-fixa-teste")
     assert auth.login_employee("NOVO.LOGIN_01", "senha-fixa-teste")
 
+    updated_with_space = update_employee(
+        access.employee.id,
+        access.employee.name,
+        access.employee.role,
+        True,
+        username="marco veiga",
+    )
+    assert updated_with_space.username == "marco veiga"
+    monkeypatch.setattr(auth.st, "session_state", {})
+    assert auth.login_employee("marco veiga", "senha-fixa-teste")
+
     with pytest.raises(BusinessError, match="já está em uso"):
         update_employee(
             other.employee.id,
             other.employee.name,
             other.employee.role,
             True,
-            username="novo.login_01",
+            username="marco veiga",
         )
     with pytest.raises(BusinessError, match="somente letras"):
         update_employee(
@@ -225,7 +236,7 @@ def test_admin_can_change_employee_login_username(monkeypatch) -> None:
             access.employee.name,
             access.employee.role,
             True,
-            username="login com espaço",
+            username="login@invalido",
         )
 
 

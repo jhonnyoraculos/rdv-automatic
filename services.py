@@ -138,10 +138,10 @@ def _normalize_username(username: str) -> str:
         ).lower()
     except ValueError as exc:
         raise BusinessError(str(exc)) from exc
-    if not re.fullmatch(r"[a-z0-9._-]+", normalized):
+    if not re.fullmatch(r"[a-z0-9._ -]+", normalized):
         raise BusinessError(
-            "O usuário pode conter somente letras sem acento, números, ponto, "
-            "hífen e sublinhado."
+            "O usuário pode conter somente letras sem acento, números, espaço, "
+            "ponto, hífen e sublinhado."
         )
     return normalized
 

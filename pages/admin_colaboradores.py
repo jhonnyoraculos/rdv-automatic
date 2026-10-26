@@ -111,7 +111,7 @@ with edit_tab:
                 max_chars=100,
                 help=(
                     "Nome usado no login. Aceita letras sem acento, números, "
-                    "ponto, hífen e sublinhado."
+                    "espaço, ponto, hífen e sublinhado."
                 ),
             )
             edited_role = st.selectbox(
