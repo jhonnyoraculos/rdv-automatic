@@ -185,6 +185,50 @@ def test_admin_defined_password_remains_valid_until_manual_change(monkeypatch) -
     assert auth.login_employee(access.username, "nova-senha-fixa")
 
 
+def test_admin_can_change_employee_login_username(monkeypatch) -> None:
+    access = create_employee_with_access(
+        "Usuário Editável",
+        EmployeeRole.AJUDANTE,
+        password="senha-fixa-teste",
+    )
+    other = create_employee_with_access(
+        "Outro Usuário",
+        EmployeeRole.MOTORISTA,
+        password="outra-senha-fixa",
+    )
+    previous_username = access.username
+
+    updated = update_employee(
+        access.employee.id,
+        access.employee.name,
+        access.employee.role,
+        True,
+        username="novo.login_01",
+    )
+
+    assert updated.username == "novo.login_01"
+    monkeypatch.setattr(auth.st, "session_state", {})
+    assert not auth.login_employee(previous_username, "senha-fixa-teste")
+    assert auth.login_employee("NOVO.LOGIN_01", "senha-fixa-teste")
+
+    with pytest.raises(BusinessError, match="já está em uso"):
+        update_employee(
+            other.employee.id,
+            other.employee.name,
+            other.employee.role,
+            True,
+            username="novo.login_01",
+        )
+    with pytest.raises(BusinessError, match="somente letras"):
+        update_employee(
+            access.employee.id,
+            access.employee.name,
+            access.employee.role,
+            True,
+            username="login com espaço",
+        )
+
+
 def test_create_reject_and_resubmit_same_protocol() -> None:
     employee = create_employee("Maria Teste", EmployeeRole.MOTORISTA)
     period = create_period(date(2026, 9, 1), date(2026, 9, 3), active=True)

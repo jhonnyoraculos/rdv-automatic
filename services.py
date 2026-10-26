@@ -131,6 +131,21 @@ def _username_base(name: str) -> str:
     return ".".join(parts)[:90] if parts else "colaborador"
 
 
+def _normalize_username(username: str) -> str:
+    try:
+        normalized = clean_text(
+            username, "Usuário de acesso", 100, required=True
+        ).lower()
+    except ValueError as exc:
+        raise BusinessError(str(exc)) from exc
+    if not re.fullmatch(r"[a-z0-9._-]+", normalized):
+        raise BusinessError(
+            "O usuário pode conter somente letras sem acento, números, ponto, "
+            "hífen e sublinhado."
+        )
+    return normalized
+
+
 def _available_username(session: Any, name: str) -> str:
     base = _username_base(name)
     candidate = base
@@ -285,9 +300,14 @@ def set_employee_password(employee_id: int, password: str) -> EmployeeAccess:
 
 
 def update_employee(
-    employee_id: int, name: str, role: EmployeeRole | str, active: bool
+    employee_id: int,
+    name: str,
+    role: EmployeeRole | str,
+    active: bool,
+    username: str | None = None,
 ) -> Employee:
     normalized_name = clean_text(name, "Nome", 150, required=True).upper()
+    normalized_username = _normalize_username(username) if username is not None else None
     with session_scope() as session:
         employee = session.get(Employee, employee_id)
         if not employee:
@@ -300,7 +320,18 @@ def update_employee(
         )
         if duplicate:
             raise BusinessError("Já existe outro colaborador com esse nome.")
+        if normalized_username is not None:
+            duplicate_username = session.scalar(
+                select(Employee).where(
+                    func.lower(Employee.username) == normalized_username,
+                    Employee.id != employee_id,
+                )
+            )
+            if duplicate_username:
+                raise BusinessError("Este usuário de acesso já está em uso.")
         employee.name = normalized_name
+        if normalized_username is not None:
+            employee.username = normalized_username
         employee.role = _role(role)
         employee.active = bool(active)
         if not employee.active:

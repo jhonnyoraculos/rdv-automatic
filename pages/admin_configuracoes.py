@@ -3,6 +3,7 @@ from __future__ import annotations
 import streamlit as st
 
 from auth import AdminRole, current_admin_role, current_admin_username
+from database import check_database_connection
 from services import BusinessError, get_expense_settings, update_expense_settings
 from ui import company_header, require_admin
 from utils import format_brl, format_datetime
@@ -15,6 +16,25 @@ company_header(
     "Valores das despesas",
     "Configuração dos valores fixos usados nos RDVs",
 )
+
+st.subheader("Conexão do banco de dados")
+database_connected, database_dialect = check_database_connection()
+if database_connected and database_dialect == "postgresql":
+    st.success("Neon/PostgreSQL conectado e respondendo corretamente.")
+elif database_connected:
+    st.warning(
+        "O banco está respondendo, mas o site ainda usa SQLite temporário. "
+        "Confira o Secret DATABASE_URL."
+    )
+else:
+    st.error(
+        "Não foi possível consultar o banco configurado. Confira a DATABASE_URL "
+        "e os logs do aplicativo."
+    )
+if st.button("TESTAR CONEXÃO NOVAMENTE", use_container_width=True):
+    st.rerun()
+
+st.divider()
 
 settings = get_expense_settings()
 st.info(

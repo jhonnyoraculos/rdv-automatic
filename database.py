@@ -9,6 +9,7 @@ from threading import Lock
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 load_dotenv()
@@ -45,6 +46,17 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 _init_lock = Lock()
 _initialized = False
 PERIOD_RESET_EVENT = "reset_periods_and_rdvs_2026_10_08_v1"
+
+
+def check_database_connection() -> tuple[bool, str]:
+    """Test the configured database without exposing connection credentials."""
+    dialect = engine.dialect.name
+    try:
+        with engine.connect() as connection:
+            connected = connection.execute(text("SELECT 1")).scalar_one() == 1
+    except SQLAlchemyError:
+        return False, dialect
+    return connected, dialect
 
 
 @contextmanager

@@ -3,6 +3,17 @@ from sqlalchemy import create_engine, inspect, text
 import database
 
 
+def test_database_connection_check_reports_active_dialect(tmp_path, monkeypatch) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'health.db'}")
+    monkeypatch.setattr(database, "engine", engine)
+
+    connected, dialect = database.check_database_connection()
+
+    assert connected is True
+    assert dialect == "sqlite"
+    engine.dispose()
+
+
 def test_init_db_adds_access_and_automatic_period_columns(
     tmp_path, monkeypatch
 ) -> None:

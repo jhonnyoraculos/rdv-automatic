@@ -105,6 +105,15 @@ with edit_tab:
             edited_name = st.text_input(
                 "Nome completo", value=selected.name, max_chars=150
             )
+            edited_username = st.text_input(
+                "Usuário de acesso",
+                value=selected.username or "",
+                max_chars=100,
+                help=(
+                    "Nome usado no login. Aceita letras sem acento, números, "
+                    "ponto, hífen e sublinhado."
+                ),
+            )
             edited_role = st.selectbox(
                 "Função",
                 list(EmployeeRole),
@@ -115,7 +124,13 @@ with edit_tab:
             save = st.form_submit_button("Salvar alterações", type="primary")
         if save:
             try:
-                update_employee(selected.id, edited_name, edited_role, edited_active)
+                update_employee(
+                    selected.id,
+                    edited_name,
+                    edited_role,
+                    edited_active,
+                    username=edited_username,
+                )
                 st.success("Colaborador atualizado.")
                 st.rerun()
             except BusinessError as exc:
