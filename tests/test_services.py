@@ -1,6 +1,7 @@
 from datetime import date
 from types import SimpleNamespace
 
+import bcrypt
 import pypdfium2 as pdfium
 import pytest
 from sqlalchemy import create_engine
@@ -28,6 +29,7 @@ from services import (
     dashboard_stats,
     delete_rdv,
     ensure_default_employees,
+    generate_pending_employee_access,
     get_active_period,
     get_expense_settings,
     get_rdv,
@@ -84,11 +86,24 @@ def test_employee_access_is_generated_hashed_and_identifies_employee(monkeypatch
     access = create_employee_with_access("Maria da Silva", EmployeeRole.MOTORISTA)
 
     assert access.username == "maria.da.silva"
+    assert access.temporary_password == f"jrmaria{access.employee.id:02d}"
     assert access.temporary_password not in access.employee.password_hash
     session_state = {}
     monkeypatch.setattr(auth.st, "session_state", session_state)
     assert auth.login_employee(access.username, access.temporary_password)
     assert session_state["employee_id"] == access.employee.id
+
+
+def test_blank_password_generates_easy_fixed_password(monkeypatch) -> None:
+    access = create_employee_with_access(
+        "Julio Cesar Ferreira Aecenio",
+        EmployeeRole.AJUDANTE,
+        password="",
+    )
+
+    assert access.temporary_password == f"jrjulio{access.employee.id:02d}"
+    monkeypatch.setattr(auth.st, "session_state", {})
+    assert auth.login_employee(access.username, access.temporary_password)
 
 
 def test_employee_login_is_restored_from_persistent_token(monkeypatch) -> None:
@@ -183,6 +198,52 @@ def test_admin_defined_password_remains_valid_until_manual_change(monkeypatch) -
     monkeypatch.setattr(auth.st, "session_state", {})
     assert not auth.login_employee(access.username, "minha-senha-fixa")
     assert auth.login_employee(access.username, "nova-senha-fixa")
+
+
+def test_pending_access_gets_easy_password_without_changing_existing_one(
+    monkeypatch,
+) -> None:
+    protected = create_employee_with_access(
+        "Senha Existente",
+        EmployeeRole.MOTORISTA,
+        password="senha-fixa-original",
+    )
+    pending_active = create_employee_with_access(
+        "Marco Teste", EmployeeRole.AJUDANTE
+    )
+    pending_inactive = create_employee_with_access(
+        "Ana Teste", EmployeeRole.AJUDANTE, active=False
+    )
+    with database.session_scope() as session:
+        session.get(Employee, pending_active.employee.id).password_hash = None
+        session.get(Employee, pending_inactive.employee.id).password_hash = None
+
+    protected_hash = protected.employee.password_hash
+    generated = generate_pending_employee_access()
+
+    assert [access.employee.name for access in generated] == [
+        "ANA TESTE",
+        "MARCO TESTE",
+    ]
+    assert all(access.temporary_password.startswith("jr") for access in generated)
+    assert all(len(access.temporary_password) >= 8 for access in generated)
+    assert all(access.employee.id != protected.employee.id for access in generated)
+    with database.session_scope() as session:
+        assert (
+            session.get(Employee, protected.employee.id).password_hash == protected_hash
+        )
+        for access in generated:
+            saved = session.get(Employee, access.employee.id)
+            assert bcrypt.checkpw(
+                access.temporary_password.encode("utf-8"),
+                saved.password_hash.encode("utf-8"),
+            )
+
+    monkeypatch.setattr(auth.st, "session_state", {})
+    active_access = next(access for access in generated if access.employee.active)
+    assert auth.login_employee(active_access.username, active_access.temporary_password)
+
+    assert generate_pending_employee_access() == []
 
 
 def test_admin_can_change_employee_login_username(monkeypatch) -> None:

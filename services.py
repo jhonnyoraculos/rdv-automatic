@@ -164,6 +164,15 @@ def _temporary_password(length: int = 12) -> str:
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
+def _easy_employee_password(employee: Employee) -> str:
+    """Build an easy fixed password for an employee who still has no access."""
+    first_name = _username_base(employee.name).split(".", maxsplit=1)[0]
+    password = f"jr{first_name}{employee.id:02d}"
+    if len(password) < 8:
+        password = f"{password}{'12345678'[: 8 - len(password)]}"
+    return password
+
+
 def ensure_default_employees() -> int:
     """Add the supplied workforce without duplicating existing employees."""
     created = 0
@@ -199,15 +208,16 @@ def ensure_default_employees() -> int:
 
 
 def generate_pending_employee_access() -> list[EmployeeAccess]:
+    """Set easy fixed passwords only for employees who do not have one yet."""
     generated: list[EmployeeAccess] = []
     with session_scope() as session:
         employees = session.scalars(
             select(Employee)
-            .where(Employee.active.is_(True), Employee.password_hash.is_(None))
+            .where(Employee.password_hash.is_(None))
             .order_by(Employee.name)
         )
         for employee in employees:
-            password = _temporary_password()
+            password = _easy_employee_password(employee)
             if not employee.username:
                 employee.username = _available_username(session, employee.name)
             employee.password_hash = generate_password_hash(password)
@@ -225,11 +235,7 @@ def create_employee_with_access(
 ) -> EmployeeAccess:
     normalized_name = clean_text(name, "Nome", 150, required=True).upper()
     timestamp = now_sp()
-    fixed_password = str(password).strip() if password is not None else _temporary_password()
-    try:
-        password_hash = generate_password_hash(fixed_password)
-    except ValueError as exc:
-        raise BusinessError(str(exc)) from exc
+    supplied_password = str(password).strip() if password is not None else ""
     with session_scope() as session:
         duplicate = session.scalar(
             select(Employee).where(func.lower(Employee.name) == normalized_name.lower())
@@ -240,13 +246,19 @@ def create_employee_with_access(
         employee = Employee(
             name=normalized_name,
             username=username,
-            password_hash=password_hash,
+            password_hash=None,
             role=_role(role),
             active=bool(active),
             created_at=timestamp,
             updated_at=timestamp,
         )
         session.add(employee)
+        session.flush()
+        fixed_password = supplied_password or _easy_employee_password(employee)
+        try:
+            employee.password_hash = generate_password_hash(fixed_password)
+        except ValueError as exc:
+            raise BusinessError(str(exc)) from exc
         session.flush()
         logger.info("Colaborador criado: id=%s nome=%s", employee.id, employee.name)
         return EmployeeAccess(employee, username, fixed_password)

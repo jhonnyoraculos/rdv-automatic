@@ -8,6 +8,7 @@ from models import EmployeeRole
 from services import (
     BusinessError,
     create_employee_with_access,
+    generate_pending_employee_access,
     get_employees,
     set_employee_password,
     update_employee,
@@ -26,12 +27,15 @@ with create_tab:
         )
         active = st.checkbox("Ativo", value=True)
         fixed_password = st.text_input(
-            "Senha fixa",
+            "Senha fixa (opcional)",
             max_chars=100,
-            help="Mínimo de 8 caracteres. Esta senha permanecerá válida até você alterá-la.",
+            help=(
+                "Deixe em branco para gerar automaticamente uma senha fácil. "
+                "Se preencher, use no mínimo 8 caracteres."
+            ),
         )
         password_confirmation = st.text_input(
-            "Confirme a senha fixa",
+            "Confirme a senha fixa (opcional)",
             max_chars=100,
         )
         submit = st.form_submit_button("Cadastrar colaborador", type="primary")
@@ -43,7 +47,7 @@ with create_tab:
                 name,
                 role,
                 active,
-                password=fixed_password,
+                password=fixed_password or None,
             )
             st.success("Colaborador cadastrado com sucesso.")
             st.code(
@@ -57,6 +61,48 @@ with create_tab:
             st.error(str(exc))
 
 with edit_tab:
+    st.write("**Criar senhas para os colaboradores sem acesso**")
+    st.caption(
+        "Cria senhas fixas fáceis somente para quem aparece como Sem senha. "
+        "Nenhuma senha já definida será alterada."
+    )
+    if st.button(
+        "CRIAR SENHAS PARA QUEM ESTÁ SEM SENHA",
+        type="primary",
+        use_container_width=True,
+    ):
+        generated_accesses = generate_pending_employee_access()
+        st.session_state["generated_employee_credentials"] = [
+            {
+                "Nome": access.employee.name,
+                "Usuário": access.username,
+                "Senha fixa": access.temporary_password,
+                "Status": "Ativo" if access.employee.active else "Inativo",
+            }
+            for access in generated_accesses
+        ]
+        if not generated_accesses:
+            st.info("Todos os colaboradores já possuem senha fixa.")
+
+    generated_credentials = st.session_state.get(
+        "generated_employee_credentials", []
+    )
+    if generated_credentials:
+        credentials_table = pd.DataFrame(generated_credentials)
+        st.success(
+            f"{len(generated_credentials)} senha(s) fixa(s) criada(s). "
+            "Baixe ou copie esta lista antes de fechar a página."
+        )
+        st.dataframe(credentials_table, use_container_width=True, hide_index=True)
+        st.download_button(
+            "BAIXAR LISTA DE USUÁRIOS E SENHAS",
+            data=credentials_table.to_csv(index=False, sep=";").encode("utf-8-sig"),
+            file_name="usuarios_e_senhas_rdv.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    st.divider()
+
     search = st.text_input("Pesquisar por nome", key="employee_search")
     employees = get_employees(search=search)
     table = pd.DataFrame(
