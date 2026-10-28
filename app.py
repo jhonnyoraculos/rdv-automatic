@@ -54,6 +54,12 @@ if is_authenticated():
             url_path="painel",
         ),
         st.Page(
+            "pages/admin_acompanhamento.py",
+            title="Acompanhamento ao vivo",
+            icon="🔴",
+            url_path="acompanhamento",
+        ),
+        st.Page(
             "pages/admin_colaboradores.py",
             title="Colaboradores",
             icon="👥",

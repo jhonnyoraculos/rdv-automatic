@@ -32,6 +32,7 @@ from services import (
     generate_pending_employee_access,
     get_active_period,
     get_expense_settings,
+    get_live_rdv_progress,
     get_rdv,
     get_rdvs,
     get_submission_for_employee_period,
@@ -410,6 +411,43 @@ def test_draft_updates_same_record_and_only_locks_after_submission() -> None:
         save_rdv_draft(
             employee.id, period.id, False, 0, partial, "Divinópolis/MG"
         )
+
+
+def test_live_progress_includes_not_started_and_partial_active_employees() -> None:
+    filling = create_employee("Acompanhamento Parcial", EmployeeRole.MOTORISTA)
+    not_started = create_employee("Ainda Não Iniciou", EmployeeRole.AJUDANTE)
+    inactive = create_employee("Colaborador Inativo", EmployeeRole.MOTORISTA, False)
+    period = create_period(date(2026, 9, 1), date(2026, 9, 3), active=True)
+    entries = [
+        {
+            "date": day,
+            "city": "Bauru" if day == period.start_date else "",
+            "hotel_name": "",
+            "hotel_amount": 0,
+            "benefit_type": BenefitType.DIARIA
+            if day == period.start_date
+            else BenefitType.NONE,
+            "benefit_amount": 100 if day == period.start_date else 0,
+        }
+        for day in date_range(period.start_date, period.end_date)
+    ]
+    draft = save_rdv_draft(filling.id, period.id, False, 0, entries, "Bauru/SP")
+
+    progress = get_live_rdv_progress(period.id)
+
+    assert [item.employee.name for item in progress] == [
+        "ACOMPANHAMENTO PARCIAL",
+        "AINDA NÃO INICIOU",
+    ]
+    partial = next(item for item in progress if item.employee.id == filling.id)
+    waiting = next(item for item in progress if item.employee.id == not_started.id)
+    assert partial.submission and partial.submission.id == draft.id
+    assert partial.submission.status == SubmissionStatus.RASCUNHO
+    assert partial.filled_days == 1
+    assert partial.total_days == 3
+    assert waiting.submission is None
+    assert waiting.filled_days == 0
+    assert all(item.employee.id != inactive.id for item in progress)
 
 
 def test_admin_configures_fixed_benefit_values_enforced_by_server() -> None:

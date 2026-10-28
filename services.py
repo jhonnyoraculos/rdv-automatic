@@ -112,6 +112,15 @@ class EmployeeAccess:
     temporary_password: str
 
 
+@dataclass(frozen=True)
+class LiveRdvProgress:
+    employee: Employee
+    period: RdvPeriod
+    submission: RdvSubmission | None
+    filled_days: int
+    total_days: int
+
+
 def _role(value: EmployeeRole | str) -> EmployeeRole:
     try:
         return value if isinstance(value, EmployeeRole) else EmployeeRole(str(value))
@@ -1031,6 +1040,55 @@ def get_rdvs(
                 statement.order_by(RdvSubmission.submitted_at.desc())
             ).unique()
         )
+
+
+def get_live_rdv_progress(period_id: int) -> list[LiveRdvProgress]:
+    """Return the latest RDV state for every active employee in a period."""
+    with session_scope() as session:
+        period = session.get(RdvPeriod, period_id)
+        if not period:
+            raise BusinessError("Período não encontrado.")
+        employees = list(
+            session.scalars(
+                select(Employee)
+                .where(Employee.active.is_(True))
+                .order_by(Employee.name)
+            )
+        )
+        submissions = session.scalars(
+            select(RdvSubmission)
+            .options(selectinload(RdvSubmission.entries))
+            .where(RdvSubmission.period_id == period_id)
+        ).unique()
+        submission_by_employee = {
+            submission.employee_id: submission for submission in submissions
+        }
+        total_days = len(date_range(period.start_date, period.end_date))
+        progress: list[LiveRdvProgress] = []
+        for employee in employees:
+            submission = submission_by_employee.get(employee.id)
+            filled_days = 0
+            if submission:
+                filled_days = sum(
+                    bool(
+                        entry.city
+                        or entry.hotel_name
+                        or entry.hotel_amount
+                        or entry.benefit_type != BenefitType.NONE
+                        or entry.benefit_amount
+                    )
+                    for entry in submission.entries
+                )
+            progress.append(
+                LiveRdvProgress(
+                    employee=employee,
+                    period=period,
+                    submission=submission,
+                    filled_days=filled_days,
+                    total_days=total_days,
+                )
+            )
+        return progress
 
 
 def approve_rdv(

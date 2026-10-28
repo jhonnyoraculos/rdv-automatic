@@ -6,6 +6,7 @@ Aplicação Streamlit para envio, análise e exportação dos RDVs de motoristas
 
 - formulário mobile-first gerado a partir do período ativo e do colaborador autenticado;
 - preenchimento com salvamento automático do rascunho em atualização isolada, prévia sob demanda e envio definitivo em um clique;
+- acompanhamento administrativo ao vivo dos rascunhos, com progresso por colaborador e atualização automática;
 - diária e ticket com valores fixos configuráveis somente no painel administrativo, além da prévia visual da folha durante o preenchimento;
 - acesso individual com senha fixa definida pelo administrador, visível somente na área administrativa e validada por hash no login;
 - login do colaborador e do analista lembrado por até 1 ano no dispositivo, com renovação do prazo e token aleatório armazenado como hash;
