@@ -352,11 +352,22 @@ if (
     st.session_state[saved_at_key] = existing.updated_at
 
 st.info(
-    "Preencha com calma: a página não recarrega enquanto você digita. "
-    "Use os botões no final para salvar o rascunho, visualizar a folha ou enviar."
+    "O rascunho é salvo automaticamente durante o preenchimento, sem recarregar "
+    "a página inteira. A prévia só é gerada quando você pedir."
 )
 
-with st.form(f"rdv_form_{context}", clear_on_submit=False):
+fingerprint_key = f"rdv_draft_fingerprint_{context}"
+draft_exists_key = f"rdv_draft_exists_{context}"
+if draft_exists_key not in st.session_state:
+    st.session_state[draft_exists_key] = bool(
+        existing
+        and existing.status
+        in {SubmissionStatus.RASCUNHO, SubmissionStatus.REJEITADO}
+    )
+
+
+@st.fragment(key=f"rdv_editor_{context}")
+def render_rdv_editor() -> None:
     st.subheader("Adiantamento")
     advance_answer = st.radio(
         "Houve adiantamento de diária?",
@@ -466,94 +477,129 @@ with st.form(f"rdv_form_{context}", clear_on_submit=False):
         total_note += " Hotéis não entram no cálculo."
     st.caption(f"{total_note} Adiantamento não entra no cálculo.")
 
-    preview_col, draft_col = st.columns(2)
-    preview_requested = preview_col.form_submit_button(
+    preview_col, send_col = st.columns(2)
+    preview_requested = preview_col.button(
         "VISUALIZAR PRÉVIA",
         use_container_width=True,
+        key=f"preview_rdv_{context}",
     )
-    save_draft_requested = draft_col.form_submit_button(
-        "SALVAR RASCUNHO",
-        use_container_width=True,
-    )
-    send_requested = st.form_submit_button(
+    send_requested = send_col.button(
         "ENVIAR RDV",
         type="primary",
         use_container_width=True,
+        key=f"send_rdv_{context}",
     )
 
-if preview_requested:
-    preview_entries = [
-        SimpleNamespace(
-            date=entry["date"],
-            city=entry["city"],
-            hotel_name=entry["hotel_name"],
-            hotel_amount=entry["hotel_amount"],
-            benefit_type=BenefitType(str(entry["benefit_type"])),
-            benefit_amount=entry["benefit_amount"],
-        )
-        for entry in entries
-    ]
-    preview_rdv = SimpleNamespace(
-        id=existing.id if existing else 0,
-        employee=employee,
-        period=period,
-        advance_received=advance_answer == "Sim",
-        advance_amount=money(effective_advance_value),
-        entries=preview_entries,
-        location=location.strip().upper(),
+    draft_fingerprint = (
+        advance_answer == "Sim",
+        str(money(effective_advance_value)),
+        location.strip(),
+        tuple(
+            (
+                entry["date"].isoformat(),
+                str(entry["city"]),
+                str(entry["hotel_name"]),
+                str(entry["hotel_amount"]),
+                str(entry["benefit_type"]),
+                str(entry["benefit_amount"]),
+            )
+            for entry in entries
+        ),
     )
-    st.subheader("Prévia da folha")
-    preview_png = pdf_to_png(rdv_to_pdf(preview_rdv), scale=1.5)
-    st.image(preview_png, use_container_width=True)
+    if fingerprint_key not in st.session_state:
+        st.session_state[fingerprint_key] = draft_fingerprint
+    elif st.session_state[fingerprint_key] != draft_fingerprint:
+        has_draft_data = (
+            advance_answer == "Sim"
+            or bool(location.strip())
+            or any(
+                entry["city"]
+                or entry["hotel_name"]
+                or entry["hotel_amount"]
+                or entry["benefit_type"] != BenefitType.NONE.value
+                or entry["benefit_amount"]
+                for entry in entries
+            )
+        )
+        can_update_existing = bool(st.session_state[draft_exists_key])
+        if has_draft_data or can_update_existing:
+            try:
+                draft = save_rdv_draft(
+                    employee.id,
+                    period.id,
+                    advance_answer == "Sim",
+                    effective_advance_value,
+                    entries,
+                    location,
+                )
+                st.session_state[fingerprint_key] = draft_fingerprint
+                st.session_state[draft_exists_key] = True
+                st.session_state[saved_at_key] = draft.updated_at
+            except BusinessError as exc:
+                st.warning(f"Não foi possível salvar o rascunho: {exc}")
+            except Exception:
+                logger.exception("Falha inesperada ao salvar rascunho RDV")
+                st.warning(
+                    "Não foi possível salvar o rascunho agora. "
+                    "Seus dados continuam nesta tela; tente novamente."
+                )
+        else:
+            st.session_state[fingerprint_key] = draft_fingerprint
 
-if save_draft_requested:
-    try:
-        draft = save_rdv_draft(
-            employee.id,
-            period.id,
-            advance_answer == "Sim",
-            effective_advance_value,
-            entries,
-            location,
+    if saved_at := st.session_state.get(saved_at_key):
+        st.success(
+            f"Rascunho salvo automaticamente às "
+            f"{format_datetime(saved_at)[-5:]}."
         )
-        st.session_state[saved_at_key] = draft.updated_at
-        st.success("Rascunho salvo. Você pode sair e continuar depois.")
-    except BusinessError as exc:
-        st.warning(f"Não foi possível salvar o rascunho: {exc}")
-    except Exception:
-        logger.exception("Falha inesperada ao salvar rascunho RDV")
-        st.warning(
-            "Não foi possível salvar o rascunho agora. "
-            "Seus dados continuam nesta tela; tente novamente."
-        )
+    else:
+        st.caption("O rascunho será salvo assim que você preencher algum campo.")
 
-if saved_at := st.session_state.get(saved_at_key):
-    st.caption(
-        f"Último rascunho salvo às {format_datetime(saved_at)[-5:]}."
-    )
-else:
-    st.caption(
-        "O rascunho só é gravado quando você toca em SALVAR RASCUNHO."
-    )
+    if preview_requested:
+        preview_entries = [
+            SimpleNamespace(
+                date=entry["date"],
+                city=entry["city"],
+                hotel_name=entry["hotel_name"],
+                hotel_amount=entry["hotel_amount"],
+                benefit_type=BenefitType(str(entry["benefit_type"])),
+                benefit_amount=entry["benefit_amount"],
+            )
+            for entry in entries
+        ]
+        preview_rdv = SimpleNamespace(
+            id=existing.id if existing else 0,
+            employee=employee,
+            period=period,
+            advance_received=advance_answer == "Sim",
+            advance_amount=money(effective_advance_value),
+            entries=preview_entries,
+            location=location.strip().upper(),
+        )
+        st.subheader("Prévia da folha")
+        preview_png = pdf_to_png(rdv_to_pdf(preview_rdv), scale=1.5)
+        st.image(preview_png, use_container_width=True)
 
-if send_requested:
-    try:
-        saved = create_rdv(
-            employee.id,
-            period.id,
-            advance_answer == "Sim",
-            effective_advance_value,
-            entries,
-            location,
-        )
-        st.session_state["rdv_success"] = protocol(saved.id)
-        st.session_state["rdv_success_context"] = base_context
-        st.rerun()
-    except BusinessError as exc:
-        st.error(str(exc))
-    except Exception:
-        logger.exception("Falha inesperada ao enviar RDV")
-        st.error(
-            "Não foi possível enviar o RDV. "
-            "Tente novamente ou procure o responsável pela frota."
-        )
+    if send_requested:
+        try:
+            saved = create_rdv(
+                employee.id,
+                period.id,
+                advance_answer == "Sim",
+                effective_advance_value,
+                entries,
+                location,
+            )
+            st.session_state["rdv_success"] = protocol(saved.id)
+            st.session_state["rdv_success_context"] = base_context
+            st.rerun(scope="app")
+        except BusinessError as exc:
+            st.error(str(exc))
+        except Exception:
+            logger.exception("Falha inesperada ao enviar RDV")
+            st.error(
+                "Não foi possível enviar o RDV. "
+                "Tente novamente ou procure o responsável pela frota."
+            )
+
+
+render_rdv_editor()
