@@ -317,10 +317,11 @@ if st.session_state.get("rdv_context") != context:
         saved = saved_entries.get(day)
         suffix = f"{context}_{day:%Y_%m_%d}"
         st.session_state[f"city_{suffix}"] = saved.city if saved else ""
-        st.session_state[f"hotel_{suffix}"] = saved.hotel_name if saved else ""
-        st.session_state[f"hotel_value_{suffix}"] = (
-            float(saved.hotel_amount) if saved else 0.0
-        )
+        if employee.role == EmployeeRole.AJUDANTE:
+            st.session_state[f"hotel_{suffix}"] = saved.hotel_name if saved else ""
+            st.session_state[f"hotel_value_{suffix}"] = (
+                float(saved.hotel_amount) if saved else 0.0
+            )
         st.session_state[f"benefit_{suffix}"] = (
             saved.benefit_type.value if saved else BenefitType.NONE.value
         )
@@ -334,9 +335,8 @@ if (
         f"Este RDV foi devolvido para correção. Motivo: {existing.admin_comment}"
     )
 
-role_label = (
-    "Motorista" if employee.role == EmployeeRole.MOTORISTA else "Ajudante de motorista"
-)
+is_helper = employee.role == EmployeeRole.AJUDANTE
+role_label = "Ajudante de motorista" if is_helper else "Motorista"
 st.markdown(
     f'<div class="info-strip"><b>Nome:</b> {escape(employee.name)}<br><b>Função:</b> {role_label}<br>'
     f"<b>Período:</b> {format_date(period.start_date)} até {format_date(period.end_date)}</div>",
@@ -399,7 +399,7 @@ with st.form(f"rdv_form_{context}", clear_on_submit=False):
             city = st.text_input("Cidade", max_chars=120, key=f"city_{suffix}")
             hotel_name = ""
             hotel_amount = 0.0
-            if employee.role == EmployeeRole.AJUDANTE:
+            if is_helper:
                 hotel_col, hotel_value_col = st.columns([2, 1])
                 with hotel_col:
                     hotel_name = st.text_input(
@@ -445,24 +445,26 @@ with st.form(f"rdv_form_{context}", clear_on_submit=False):
     effective_advance_value = advance_value if advance_answer == "Sim" else 0.0
     totals = calculate_rdv_totals(entries, effective_advance_value)
     st.subheader("Resumo do RDV")
-    metric_columns = st.columns(4)
+    metric_columns = st.columns(4 if is_helper else 3)
     metric_columns[0].metric("Diárias", format_brl(totals["daily_total"]))
     metric_columns[1].metric("Tickets", format_brl(totals["ticket_total"]))
-    metric_columns[2].metric(
-        "Hotéis (informativo)", format_brl(totals["hotel_total"])
-    )
-    metric_columns[3].metric(
-        "Total da quinzena", format_brl(totals["expense_total"])
-    )
+    if is_helper:
+        metric_columns[2].metric(
+            "Hotéis (informativo)", format_brl(totals["hotel_total"])
+        )
+        total_column = metric_columns[3]
+    else:
+        total_column = metric_columns[2]
+    total_column.metric("Total da quinzena", format_brl(totals["expense_total"]))
     if advance_answer == "Sim":
         st.metric(
             "Adiantamento recebido (informativo)",
             format_brl(totals["advance_total"]),
         )
-    st.caption(
-        "O total da quinzena considera somente diárias e tickets. "
-        "Hotéis e adiantamento não entram no cálculo."
-    )
+    total_note = "O total da quinzena considera somente diárias e tickets."
+    if is_helper:
+        total_note += " Hotéis não entram no cálculo."
+    st.caption(f"{total_note} Adiantamento não entra no cálculo.")
 
     preview_col, draft_col = st.columns(2)
     preview_requested = preview_col.form_submit_button(
