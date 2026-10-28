@@ -301,7 +301,6 @@ revision = (
 context = f"{base_context}_{revision}"
 if st.session_state.get("rdv_context") != context:
     st.session_state["rdv_context"] = context
-    st.session_state["rdv_confirm"] = False
     st.session_state.pop("rdv_success", None)
     st.session_state.pop("rdv_success_context", None)
     saved_entries = (
@@ -344,253 +343,215 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.subheader("Adiantamento")
-advance_answer = st.radio(
-    "Houve adiantamento de diária?",
-    ["Não", "Sim"],
-    horizontal=True,
-    key=f"advance_{context}",
+saved_at_key = f"rdv_draft_saved_at_{context}"
+if (
+    saved_at_key not in st.session_state
+    and existing
+    and existing.status == SubmissionStatus.RASCUNHO
+):
+    st.session_state[saved_at_key] = existing.updated_at
+
+st.info(
+    "Preencha com calma: a página não recarrega enquanto você digita. "
+    "Use os botões no final para salvar o rascunho, visualizar a folha ou enviar."
 )
-if advance_answer == "Sim":
+
+with st.form(f"rdv_form_{context}", clear_on_submit=False):
+    st.subheader("Adiantamento")
+    advance_answer = st.radio(
+        "Houve adiantamento de diária?",
+        ["Não", "Sim"],
+        horizontal=True,
+        key=f"advance_{context}",
+    )
     advance_value = st.number_input(
         "Valor do adiantamento (R$)",
         min_value=0.0,
         step=0.01,
         format="%.2f",
         key=f"advance_value_{context}",
+        help="Este valor só será considerado quando a resposta acima for Sim.",
     )
-else:
-    advance_value = 0.0
 
-st.subheader("Lançamentos do período")
-st.caption("Abra cada data para informar cidade e despesas. Domingos estão destacados.")
-entries: list[dict[str, object]] = []
-benefit_options = [item.value for item in BenefitType]
-benefit_option_labels = {
-    "NONE": "Nenhum",
-    "DIARIA": f"Diária — {format_brl(expense_settings.daily_amount)}",
-    "TICKET": f"Ticket — {format_brl(expense_settings.ticket_amount)}",
-}
-fixed_benefit_values = {
-    BenefitType.DIARIA.value: expense_settings.daily_amount,
-    BenefitType.TICKET.value: expense_settings.ticket_amount,
-}
-for day in date_range(period.start_date, period.end_date):
-    suffix = f"{context}_{day:%Y_%m_%d}"
-    sunday = day.weekday() == 6
-    expander_title = (
-        f"{format_date(day)} — {'DOMINGO' if sunday else WEEKDAYS_PT[day.weekday()]}"
+    st.subheader("Lançamentos do período")
+    st.caption(
+        "Abra cada data para informar cidade e despesas. Domingos estão destacados."
     )
-    with st.expander(expander_title, expanded=False):
-        city = st.text_input("Cidade", max_chars=120, key=f"city_{suffix}")
-        hotel_name = ""
-        hotel_amount = 0.0
-        if employee.role == EmployeeRole.AJUDANTE:
-            hotel_col, hotel_value_col = st.columns([2, 1])
-            with hotel_col:
-                hotel_name = st.text_input(
-                    "Hotel", max_chars=150, key=f"hotel_{suffix}"
-                )
-            with hotel_value_col:
-                hotel_amount = st.number_input(
-                    "Valor do hotel (R$)",
-                    min_value=0.0,
-                    step=0.01,
-                    format="%.2f",
-                    key=f"hotel_value_{suffix}",
-                )
-        type_col, value_col = st.columns([2, 1])
-        with type_col:
+    entries: list[dict[str, object]] = []
+    benefit_options = [item.value for item in BenefitType]
+    benefit_option_labels = {
+        "NONE": "Nenhum",
+        "DIARIA": f"Diária — {format_brl(expense_settings.daily_amount)}",
+        "TICKET": f"Ticket — {format_brl(expense_settings.ticket_amount)}",
+    }
+    fixed_benefit_values = {
+        BenefitType.DIARIA.value: expense_settings.daily_amount,
+        BenefitType.TICKET.value: expense_settings.ticket_amount,
+    }
+    for day in date_range(period.start_date, period.end_date):
+        suffix = f"{context}_{day:%Y_%m_%d}"
+        sunday = day.weekday() == 6
+        expander_title = (
+            f"{format_date(day)} — "
+            f"{'DOMINGO' if sunday else WEEKDAYS_PT[day.weekday()]}"
+        )
+        with st.expander(expander_title, expanded=False):
+            city = st.text_input("Cidade", max_chars=120, key=f"city_{suffix}")
+            hotel_name = ""
+            hotel_amount = 0.0
+            if employee.role == EmployeeRole.AJUDANTE:
+                hotel_col, hotel_value_col = st.columns([2, 1])
+                with hotel_col:
+                    hotel_name = st.text_input(
+                        "Hotel", max_chars=150, key=f"hotel_{suffix}"
+                    )
+                with hotel_value_col:
+                    hotel_amount = st.number_input(
+                        "Valor do hotel (R$)",
+                        min_value=0.0,
+                        step=0.01,
+                        format="%.2f",
+                        key=f"hotel_value_{suffix}",
+                    )
             benefit_type = st.selectbox(
                 "Tipo da despesa",
                 benefit_options,
                 format_func=lambda value: benefit_option_labels[value],
                 key=f"benefit_{suffix}",
             )
-        with value_col:
             if benefit_type != BenefitType.NONE.value:
                 benefit_amount = fixed_benefit_values[benefit_type]
-                st.text_input(
-                    "Valor fixo",
-                    value=format_brl(benefit_amount),
-                    disabled=True,
-                    key=f"fixed_benefit_{suffix}_{benefit_type}_{benefit_amount}",
-                )
             else:
                 benefit_amount = money(0)
-        entries.append(
-            {
-                "date": day,
-                "city": city,
-                "hotel_name": hotel_name,
-                "hotel_amount": money(hotel_amount),
-                "benefit_type": benefit_type,
-                "benefit_amount": money(benefit_amount),
-            }
+            entries.append(
+                {
+                    "date": day,
+                    "city": city,
+                    "hotel_name": hotel_name,
+                    "hotel_amount": money(hotel_amount),
+                    "benefit_type": benefit_type,
+                    "benefit_amount": money(benefit_amount),
+                }
+            )
+
+    st.subheader("Local do preenchimento")
+    location = st.text_input(
+        "Cidade/UF",
+        max_chars=80,
+        placeholder="Ex.: Divinópolis/MG",
+        key=f"location_{context}",
+    )
+
+    effective_advance_value = advance_value if advance_answer == "Sim" else 0.0
+    totals = calculate_rdv_totals(entries, effective_advance_value)
+    st.subheader("Resumo do RDV")
+    metric_columns = st.columns(4)
+    metric_columns[0].metric("Diárias", format_brl(totals["daily_total"]))
+    metric_columns[1].metric("Tickets", format_brl(totals["ticket_total"]))
+    metric_columns[2].metric(
+        "Hotéis (informativo)", format_brl(totals["hotel_total"])
+    )
+    metric_columns[3].metric(
+        "Total da quinzena", format_brl(totals["expense_total"])
+    )
+    if advance_answer == "Sim":
+        st.metric(
+            "Adiantamento recebido (informativo)",
+            format_brl(totals["advance_total"]),
         )
-
-st.subheader("Local do preenchimento")
-location = st.text_input(
-    "Cidade/UF",
-    max_chars=80,
-    placeholder="Ex.: Divinópolis/MG",
-    key=f"location_{context}",
-)
-
-totals = calculate_rdv_totals(entries, advance_value)
-st.subheader("Resumo do RDV")
-metric_columns = st.columns(4)
-metric_columns[0].metric("Diárias", format_brl(totals["daily_total"]))
-metric_columns[1].metric("Tickets", format_brl(totals["ticket_total"]))
-metric_columns[2].metric("Hotéis (informativo)", format_brl(totals["hotel_total"]))
-metric_columns[3].metric("Total da quinzena", format_brl(totals["expense_total"]))
-if advance_answer == "Sim":
-    st.metric(
-        "Adiantamento recebido (informativo)",
-        format_brl(totals["advance_total"]),
+    st.caption(
+        "O total da quinzena considera somente diárias e tickets. "
+        "Hotéis e adiantamento não entram no cálculo."
     )
-st.caption(
-    "O total da quinzena considera somente diárias e tickets. Hotéis e adiantamento não entram no cálculo."
-)
 
-st.subheader("Prévia da folha")
-st.caption(
-    "Esta é a folha como está ficando. Ela é atualizada conforme você preenche os campos."
-)
-preview_entries = [
-    SimpleNamespace(
-        date=entry["date"],
-        city=entry["city"],
-        hotel_name=entry["hotel_name"],
-        hotel_amount=entry["hotel_amount"],
-        benefit_type=BenefitType(str(entry["benefit_type"])),
-        benefit_amount=entry["benefit_amount"],
+    preview_col, draft_col = st.columns(2)
+    preview_requested = preview_col.form_submit_button(
+        "VISUALIZAR PRÉVIA",
+        use_container_width=True,
     )
-    for entry in entries
-]
-preview_rdv = SimpleNamespace(
-    id=existing.id if existing else 0,
-    employee=employee,
-    period=period,
-    advance_received=advance_answer == "Sim",
-    advance_amount=money(advance_value),
-    entries=preview_entries,
-    location=location.strip().upper(),
-)
-preview_png = pdf_to_png(rdv_to_pdf(preview_rdv), scale=1.5)
-st.image(preview_png, use_container_width=True)
+    save_draft_requested = draft_col.form_submit_button(
+        "SALVAR RASCUNHO",
+        use_container_width=True,
+    )
+    send_requested = st.form_submit_button(
+        "ENVIAR RDV",
+        type="primary",
+        use_container_width=True,
+    )
 
-# Streamlit reruns this page after a widget is committed (for text fields, on
-# Enter or when focus leaves the field). Compare the current payload with the
-# previous render so normal reruns do not generate unnecessary database writes.
-draft_fingerprint = (
-    advance_answer == "Sim",
-    str(money(advance_value)),
-    location.strip(),
-    tuple(
-        (
-            entry["date"].isoformat(),
-            str(entry["city"]),
-            str(entry["hotel_name"]),
-            str(entry["hotel_amount"]),
-            str(entry["benefit_type"]),
-            str(entry["benefit_amount"]),
+if preview_requested:
+    preview_entries = [
+        SimpleNamespace(
+            date=entry["date"],
+            city=entry["city"],
+            hotel_name=entry["hotel_name"],
+            hotel_amount=entry["hotel_amount"],
+            benefit_type=BenefitType(str(entry["benefit_type"])),
+            benefit_amount=entry["benefit_amount"],
         )
         for entry in entries
-    ),
-)
-fingerprint_key = f"rdv_draft_fingerprint_{context}"
-saved_at_key = f"rdv_draft_saved_at_{context}"
-if fingerprint_key not in st.session_state:
-    st.session_state[fingerprint_key] = draft_fingerprint
-    if existing and existing.status == SubmissionStatus.RASCUNHO:
-        st.session_state[saved_at_key] = existing.updated_at
-elif st.session_state[fingerprint_key] != draft_fingerprint:
-    has_draft_data = (
-        advance_answer == "Sim"
-        or bool(location.strip())
-        or any(
-            entry["city"]
-            or entry["hotel_name"]
-            or entry["hotel_amount"]
-            or entry["benefit_type"] != BenefitType.NONE.value
-            or entry["benefit_amount"]
-            for entry in entries
+    ]
+    preview_rdv = SimpleNamespace(
+        id=existing.id if existing else 0,
+        employee=employee,
+        period=period,
+        advance_received=advance_answer == "Sim",
+        advance_amount=money(effective_advance_value),
+        entries=preview_entries,
+        location=location.strip().upper(),
+    )
+    st.subheader("Prévia da folha")
+    preview_png = pdf_to_png(rdv_to_pdf(preview_rdv), scale=1.5)
+    st.image(preview_png, use_container_width=True)
+
+if save_draft_requested:
+    try:
+        draft = save_rdv_draft(
+            employee.id,
+            period.id,
+            advance_answer == "Sim",
+            effective_advance_value,
+            entries,
+            location,
         )
-    )
-    can_update_existing = bool(
-        existing
-        and existing.status
-        in {SubmissionStatus.RASCUNHO, SubmissionStatus.REJEITADO}
-    )
-    if has_draft_data or can_update_existing:
-        try:
-            draft = save_rdv_draft(
-                employee.id,
-                period.id,
-                advance_answer == "Sim",
-                advance_value,
-                entries,
-                location,
-            )
-            st.session_state[fingerprint_key] = draft_fingerprint
-            st.session_state[saved_at_key] = draft.updated_at
-        except BusinessError as exc:
-            st.warning(f"Não foi possível salvar o rascunho: {exc}")
-        except Exception:
-            logger.exception("Falha inesperada ao salvar rascunho RDV")
-            st.warning(
-                "Não foi possível salvar o rascunho agora. "
-                "Seus dados continuam nesta tela; tente novamente."
-            )
-    else:
-        st.session_state[fingerprint_key] = draft_fingerprint
+        st.session_state[saved_at_key] = draft.updated_at
+        st.success("Rascunho salvo. Você pode sair e continuar depois.")
+    except BusinessError as exc:
+        st.warning(f"Não foi possível salvar o rascunho: {exc}")
+    except Exception:
+        logger.exception("Falha inesperada ao salvar rascunho RDV")
+        st.warning(
+            "Não foi possível salvar o rascunho agora. "
+            "Seus dados continuam nesta tela; tente novamente."
+        )
 
 if saved_at := st.session_state.get(saved_at_key):
-    st.success(
-        f"Rascunho salvo automaticamente às {format_datetime(saved_at)[-5:]}. "
-        "Você pode sair e continuar depois."
+    st.caption(
+        f"Último rascunho salvo às {format_datetime(saved_at)[-5:]}."
     )
 else:
     st.caption(
-        "Suas alterações serão salvas automaticamente. O RDV só será enviado "
-        "ao analista quando você confirmar o envio no final."
+        "O rascunho só é gravado quando você toca em SALVAR RASCUNHO."
     )
 
-if st.button(
-    "ENVIAR RDV",
-    type="primary",
-    disabled=not location.strip(),
-    use_container_width=True,
-):
-    st.session_state["rdv_confirm"] = True
-
-if st.session_state.get("rdv_confirm"):
-    st.warning("Confirmar o envio deste RDV?")
-    confirm_col, cancel_col = st.columns(2)
-    if confirm_col.button(
-        "SIM, ENVIAR", type="primary", use_container_width=True
-    ):
-        try:
-            saved = create_rdv(
-                employee.id,
-                period.id,
-                advance_answer == "Sim",
-                advance_value,
-                entries,
-                location,
-            )
-            st.session_state["rdv_success"] = protocol(saved.id)
-            st.session_state["rdv_success_context"] = base_context
-            st.session_state["rdv_confirm"] = False
-            st.rerun()
-        except BusinessError as exc:
-            st.error(str(exc))
-        except Exception:
-            logger.exception("Falha inesperada ao enviar RDV")
-            st.error(
-                "Não foi possível enviar o RDV. Tente novamente ou procure o responsável pela frota."
-            )
-    if cancel_col.button("NÃO", use_container_width=True):
-        st.session_state["rdv_confirm"] = False
+if send_requested:
+    try:
+        saved = create_rdv(
+            employee.id,
+            period.id,
+            advance_answer == "Sim",
+            effective_advance_value,
+            entries,
+            location,
+        )
+        st.session_state["rdv_success"] = protocol(saved.id)
+        st.session_state["rdv_success_context"] = base_context
         st.rerun()
+    except BusinessError as exc:
+        st.error(str(exc))
+    except Exception:
+        logger.exception("Falha inesperada ao enviar RDV")
+        st.error(
+            "Não foi possível enviar o RDV. "
+            "Tente novamente ou procure o responsável pela frota."
+        )
