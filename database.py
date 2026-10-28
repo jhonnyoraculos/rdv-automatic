@@ -141,6 +141,10 @@ def init_db() -> None:
             statements.append(
                 "ALTER TABLE employees ADD COLUMN password_hash VARCHAR(200)"
             )
+        if "visible_password" not in employee_columns:
+            statements.append(
+                "ALTER TABLE employees ADD COLUMN visible_password VARCHAR(100)"
+            )
         if "automatic" not in period_columns:
             statements.append(
                 "ALTER TABLE rdv_periods ADD COLUMN automatic BOOLEAN NOT NULL "

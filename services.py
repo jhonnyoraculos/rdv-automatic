@@ -11,6 +11,7 @@ from decimal import Decimal
 from threading import Lock
 from typing import Any
 
+import bcrypt
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
@@ -193,6 +194,7 @@ def ensure_default_employees() -> int:
                 name=name,
                 username=_available_username(session, name),
                 password_hash=None,
+                visible_password=None,
                 role=role,
                 active=True,
                 created_at=timestamp,
@@ -221,6 +223,7 @@ def generate_pending_employee_access() -> list[EmployeeAccess]:
             if not employee.username:
                 employee.username = _available_username(session, employee.name)
             employee.password_hash = generate_password_hash(password)
+            employee.visible_password = password
             employee.updated_at = now_sp()
             generated.append(EmployeeAccess(employee, employee.username, password))
         session.flush()
@@ -247,6 +250,7 @@ def create_employee_with_access(
             name=normalized_name,
             username=username,
             password_hash=None,
+            visible_password=None,
             role=_role(role),
             active=bool(active),
             created_at=timestamp,
@@ -257,6 +261,7 @@ def create_employee_with_access(
         fixed_password = supplied_password or _easy_employee_password(employee)
         try:
             employee.password_hash = generate_password_hash(fixed_password)
+            employee.visible_password = fixed_password
         except ValueError as exc:
             raise BusinessError(str(exc)) from exc
         session.flush()
@@ -280,6 +285,7 @@ def reset_employee_password(employee_id: int) -> EmployeeAccess:
         if not employee.username:
             employee.username = _available_username(session, employee.name)
         employee.password_hash = generate_password_hash(temporary_password)
+        employee.visible_password = temporary_password
         session.execute(
             delete(EmployeeSession).where(EmployeeSession.employee_id == employee.id)
         )
@@ -302,6 +308,7 @@ def set_employee_password(employee_id: int, password: str) -> EmployeeAccess:
         if not employee.username:
             employee.username = _available_username(session, employee.name)
         employee.password_hash = password_hash
+        employee.visible_password = fixed_password
         session.execute(
             delete(EmployeeSession).where(EmployeeSession.employee_id == employee.id)
         )
@@ -309,6 +316,31 @@ def set_employee_password(employee_id: int, password: str) -> EmployeeAccess:
         session.flush()
         logger.info("Senha fixa definida: colaborador=%s", employee.id)
         return EmployeeAccess(employee, employee.username, fixed_password)
+
+
+def recover_generated_employee_passwords() -> int:
+    """Recover legacy easy passwords without changing any employee login."""
+    recovered = 0
+    with session_scope() as session:
+        employees = session.scalars(
+            select(Employee).where(
+                Employee.password_hash.is_not(None),
+                Employee.visible_password.is_(None),
+            )
+        )
+        for employee in employees:
+            password = _easy_employee_password(employee)
+            try:
+                matches = bcrypt.checkpw(
+                    password.encode("utf-8"), employee.password_hash.encode("utf-8")
+                )
+            except ValueError:
+                matches = False
+            if matches:
+                employee.visible_password = password
+                recovered += 1
+        session.flush()
+    return recovered
 
 
 def update_employee(

@@ -35,6 +35,7 @@ from services import (
     get_rdv,
     get_rdvs,
     get_submission_for_employee_period,
+    recover_generated_employee_passwords,
     reject_rdv,
     reopen_rdv_for_editing,
     reset_employee_password,
@@ -88,6 +89,7 @@ def test_employee_access_is_generated_hashed_and_identifies_employee(monkeypatch
     assert access.username == "maria.da.silva"
     assert access.temporary_password == f"jrmaria{access.employee.id:02d}"
     assert access.temporary_password not in access.employee.password_hash
+    assert access.employee.visible_password == access.temporary_password
     session_state = {}
     monkeypatch.setattr(auth.st, "session_state", session_state)
     assert auth.login_employee(access.username, access.temporary_password)
@@ -244,6 +246,39 @@ def test_pending_access_gets_easy_password_without_changing_existing_one(
     assert auth.login_employee(active_access.username, active_access.temporary_password)
 
     assert generate_pending_employee_access() == []
+
+
+def test_legacy_easy_password_is_recovered_without_changing_login(monkeypatch) -> None:
+    access = create_employee_with_access("Senha Legada", EmployeeRole.AJUDANTE)
+    original_hash = access.employee.password_hash
+    with database.session_scope() as session:
+        session.get(Employee, access.employee.id).visible_password = None
+
+    assert recover_generated_employee_passwords() == 1
+
+    with database.session_scope() as session:
+        recovered = session.get(Employee, access.employee.id)
+        assert recovered.visible_password == access.temporary_password
+        assert recovered.password_hash == original_hash
+    monkeypatch.setattr(auth.st, "session_state", {})
+    assert auth.login_employee(access.username, access.temporary_password)
+
+
+def test_custom_password_must_be_redefined_before_it_can_be_recovered() -> None:
+    access = create_employee_with_access(
+        "Senha Personalizada Antiga",
+        EmployeeRole.MOTORISTA,
+        password="uma-senha-personalizada",
+    )
+    with database.session_scope() as session:
+        session.get(Employee, access.employee.id).visible_password = None
+
+    assert recover_generated_employee_passwords() == 0
+    with database.session_scope() as session:
+        assert session.get(Employee, access.employee.id).visible_password is None
+
+    changed = set_employee_password(access.employee.id, "senha-nova-visivel")
+    assert changed.employee.visible_password == "senha-nova-visivel"
 
 
 def test_admin_can_change_employee_login_username(monkeypatch) -> None:

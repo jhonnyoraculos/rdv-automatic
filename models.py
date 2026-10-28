@@ -63,6 +63,7 @@ class Employee(Base):
         String(100), nullable=True, unique=True, index=True
     )
     password_hash: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    visible_password: Mapped[str | None] = mapped_column(String(100), nullable=True)
     role: Mapped[EmployeeRole] = mapped_column(enum_type(EmployeeRole, "employee_role"))
     active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, index=True
