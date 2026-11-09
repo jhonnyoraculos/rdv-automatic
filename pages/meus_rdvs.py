@@ -4,12 +4,12 @@ import pandas as pd
 import streamlit as st
 
 from auth import current_employee_id, logout
-from exports import PDF_LAYOUT_VERSION, pdf_to_png, rdv_to_pdf, rdv_to_xlsx
+from document_cache import cached_rdv_artifacts
+from exports import PDF_LAYOUT_VERSION
 from print_document import print_pdf_button
 from services import (
     BusinessError,
     get_employee,
-    get_rdv,
     get_rdvs,
     reopen_rdv_for_editing,
 )
@@ -81,7 +81,7 @@ selected_id = st.selectbox(
 )
 st.session_state["employee_opened_rdv_id"] = selected_id
 
-rdv = get_rdv(selected_id)
+rdv = next((item for item in rdvs if item.id == selected_id), None)
 if not rdv or rdv.employee_id != employee.id:
     st.error("RDV não encontrado.")
     st.stop()
@@ -139,8 +139,13 @@ if st.session_state.get(edit_confirm_key):
         st.session_state.pop(edit_confirm_key, None)
         st.rerun()
 
-pdf_data = rdv_to_pdf(rdv)
-png_data = pdf_to_png(pdf_data)
+artifacts = cached_rdv_artifacts(
+    rdv.id,
+    rdv.updated_at.isoformat(),
+    _rdv=rdv,
+)
+pdf_data = artifacts.pdf
+png_data = artifacts.png
 print_pdf_button(
     pdf_data,
     key=f"print_employee_rdv_{rdv.id}_{rdv.updated_at}_{PDF_LAYOUT_VERSION}",
@@ -173,7 +178,7 @@ download_cols[1].download_button(
 )
 download_cols[2].download_button(
     "BAIXAR EXCEL",
-    rdv_to_xlsx(rdv),
+    artifacts.xlsx,
     f"rdv_{rdv.id:06d}.xlsx",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     use_container_width=True,

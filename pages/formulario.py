@@ -13,6 +13,7 @@ from auth import (
     is_authenticated,
     logout,
 )
+from document_cache import cached_rdv_artifacts
 from exports import PDF_LAYOUT_VERSION, pdf_to_png, rdv_to_pdf
 from models import BenefitType, EmployeeRole, RdvSubmission, SubmissionStatus
 from print_document import print_pdf_button
@@ -20,7 +21,6 @@ from services import (
     BusinessError,
     create_rdv,
     get_active_employees,
-    get_active_period,
     get_employee,
     get_expense_settings,
     get_periods,
@@ -113,12 +113,15 @@ if admin_fill_mode:
         st.switch_page("pages/admin_colaboradores.py")
 else:
     employee_id = current_employee_id()
-    principal_period = get_active_period()
+    employee_periods = get_periods()
+    principal_period = next(
+        (item for item in employee_periods if item.active), None
+    )
     period = principal_period
     if principal_period:
         available_periods = [
             item
-            for item in get_periods()
+            for item in employee_periods
             if item.start_date <= principal_period.start_date
         ]
         period_by_id = {item.id: item for item in available_periods}
@@ -237,8 +240,13 @@ if existing and existing.status == SubmissionStatus.APROVADO:
     st.success(
         f"RDV concluído! Protocolo: {protocol(existing.id)}. Todas as aprovações foram realizadas."
     )
-    final_pdf = rdv_to_pdf(existing)
-    final_png = pdf_to_png(final_pdf)
+    artifacts = cached_rdv_artifacts(
+        existing.id,
+        existing.updated_at.isoformat(),
+        _rdv=existing,
+    )
+    final_pdf = artifacts.pdf
+    final_png = artifacts.png
     st.subheader("Folha final do RDV")
     print_pdf_button(
         final_pdf,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from functools import lru_cache
 
 import streamlit as st
 
@@ -49,8 +50,13 @@ _print_pdf_control = st.components.v2.component(
 )
 
 
+@lru_cache(maxsize=64)
+def _pdf_base64(pdf_data: bytes) -> str:
+    return base64.b64encode(pdf_data).decode("ascii")
+
+
 def print_pdf_button(pdf_data: bytes, *, key: str) -> None:
     _print_pdf_control(
-        data={"pdfBase64": base64.b64encode(pdf_data).decode("ascii")},
+        data={"pdfBase64": _pdf_base64(pdf_data)},
         key=key,
     )

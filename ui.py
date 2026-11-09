@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from functools import lru_cache
 from html import escape
 from pathlib import Path
 
@@ -120,9 +121,14 @@ def apply_style() -> None:
     st.markdown(APP_CSS, unsafe_allow_html=True)
 
 
-def company_header(title: str, subtitle: str = "JR Ferragens & Madeiras") -> None:
+@lru_cache(maxsize=1)
+def _company_logo_data() -> str:
     logo_path = Path(__file__).resolve().parent / "assets" / "logo_jr.png"
-    logo_data = base64.b64encode(logo_path.read_bytes()).decode("ascii")
+    return base64.b64encode(logo_path.read_bytes()).decode("ascii")
+
+
+def company_header(title: str, subtitle: str = "JR Ferragens & Madeiras") -> None:
+    logo_data = _company_logo_data()
     st.markdown(
         f'<div class="jr-header"><img class="jr-logo" src="data:image/png;base64,{logo_data}" '
         f'alt="Logo JR"><div><h1>{escape(title)}</h1><p>{escape(subtitle)}</p></div></div>',

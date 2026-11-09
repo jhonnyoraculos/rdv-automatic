@@ -8,14 +8,8 @@ from auth import (
     current_admin_role,
     current_admin_username,
 )
-from exports import (
-    PDF_LAYOUT_VERSION,
-    pdf_to_png,
-    rdv_to_csv,
-    rdv_to_pdf,
-    rdv_to_xlsx,
-    rdvs_to_xlsx,
-)
+from document_cache import cached_rdv_artifacts, cached_rdvs_xlsx
+from exports import PDF_LAYOUT_VERSION
 from models import EmployeeRole, SubmissionStatus
 from print_document import print_pdf_button
 from services import (
@@ -24,7 +18,6 @@ from services import (
     dashboard_stats,
     delete_rdv,
     get_periods,
-    get_rdv,
     get_rdvs,
     reject_rdv,
 )
@@ -168,7 +161,10 @@ if rdvs:
     )
     st.download_button(
         "Baixar Excel dos resultados filtrados",
-        data=rdvs_to_xlsx(rdvs),
+        data=cached_rdvs_xlsx(
+            tuple((item.id, item.updated_at.isoformat()) for item in rdvs),
+            _rdvs=tuple(rdvs),
+        ),
         file_name="rdvs_filtrados.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
@@ -209,7 +205,7 @@ elif selected_id not in available_ids:
 if selected_id is None:
     st.stop()
 
-rdv = get_rdv(selected_id)
+rdv = next((item for item in rdvs if item.id == selected_id), None)
 if not rdv:
     st.error("RDV não encontrado.")
     st.stop()
@@ -237,8 +233,13 @@ with details_right:
     if rdv.admin_comment:
         st.write(f"**Motivo da rejeição:** {rdv.admin_comment}")
 
-pdf_data = rdv_to_pdf(rdv)
-png_data = pdf_to_png(pdf_data)
+artifacts = cached_rdv_artifacts(
+    rdv.id,
+    rdv.updated_at.isoformat(),
+    _rdv=rdv,
+)
+pdf_data = artifacts.pdf
+png_data = artifacts.png
 if rdv.status == SubmissionStatus.APROVADO:
     st.success("RDV concluído e pronto para impressão.")
     print_pdf_button(
@@ -273,14 +274,14 @@ download_cols[1].download_button(
 )
 download_cols[2].download_button(
     "Baixar Excel",
-    rdv_to_xlsx(rdv),
+    artifacts.xlsx,
     f"rdv_{rdv.id:06d}.xlsx",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     use_container_width=True,
 )
 download_cols[3].download_button(
     "Baixar CSV",
-    rdv_to_csv(rdv),
+    artifacts.csv,
     f"rdv_{rdv.id:06d}.csv",
     "text/csv",
     use_container_width=True,

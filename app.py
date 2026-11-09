@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 
 import streamlit as st
 
@@ -16,6 +17,7 @@ from browser_session import load_admin_browser_token, load_employee_browser_toke
 from database import init_db
 from services import ensure_default_employees, get_active_period
 from ui import apply_style
+from utils import now_sp
 
 st.set_page_config(
     page_title="RDV | JR Ferragens & Madeiras",
@@ -28,9 +30,22 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
-init_db()
-ensure_default_employees()
-get_active_period()
+
+
+@st.cache_resource
+def initialize_app() -> None:
+    init_db()
+    ensure_default_employees()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def maintain_active_period(today: date) -> int | None:
+    period = get_active_period(today)
+    return period.id if period else None
+
+
+initialize_app()
+maintain_active_period(now_sp().date())
 apply_style()
 restore_admin_login(load_admin_browser_token())
 restore_employee_login(load_employee_browser_token())
